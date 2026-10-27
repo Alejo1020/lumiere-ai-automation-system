@@ -1,0 +1,23 @@
+# Cloudflare Pages — cabeceras HTTP
+# Docs: https://developers.cloudflare.com/pages/configuration/headers/
+#
+# X-Robots-Tag: noindex -> negocio ficticio (caso de portafolio): que Google no lo muestre
+# a gente buscando med spas reales en Scottsdale. Quítalo cuando sea un cliente real.
+#
+# Fotos y video: caché de 30 días (si cambias un archivo, cámbiale el nombre).
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  X-Robots-Tag: noindex
+
+/assets/media/*
+  Cache-Control: public, max-age=2592000
+
+/assets/og-image.jpg
+  Cache-Control: public, max-age=2592000
+
+/assets/favicon.svg
+  Cache-Control: public, max-age=2592000

@@ -1,0 +1,584 @@
+{
+  "name": "P31c - Lumière Delivery Status",
+  "nodes": [
+    {
+      "id": "d-webhook",
+      "name": "Twilio Status",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lumiere-wa-status",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "d-parse",
+      "name": "Parse Status",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Twilio calls this for every status change of a message we sent (queued, sent, delivered, read, failed, undelivered).\n// Twilio avisa cada cambio de estado de un mensaje enviado. Solo nos importan los que cambian algo.\nconst b = $input.first().json.body || {};\nconst status = String(b.MessageStatus || b.SmsStatus || '').toLowerCase();\nconst KEEP = ['delivered', 'read', 'failed', 'undelivered'];\nif (!KEEP.includes(status) || !b.MessageSid) return [];\nreturn [{ json: {\n  wa_message_sid: String(b.MessageSid),\n  status,\n  error_code: String(b.ErrorCode || ''),\n  failed: status === 'failed' || status === 'undelivered'\n} }];"
+      }
+    },
+    {
+      "id": "d-find",
+      "name": "Find Message",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        480,
+        300
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1001,
+          "mode": "list",
+          "cachedResultName": "Conversaciones",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit#gid=1001"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "wa_message_sid",
+              "lookupValue": "={{ $json.wa_message_sid }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d-decide",
+      "name": "Decide Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Only move forward: queued < sent < delivered < read; failed/undelivered is final. Callbacks can arrive out of order.\n// Solo se avanza: queued < sent < delivered < read; failed/undelivered es final. Los avisos pueden llegar desordenados.\nconst s = $('Parse Status').first().json;\nconst row = $input.first().json || {};\nif (!row.row_number) return []; // not one of ours (or not logged) / no es nuestro\nconst RANK = { queued: 0, accepted: 0, sent: 1, delivered: 2, read: 3 };\nconst current = String(row.estado_entrega || '').toLowerCase();\nconst currentFinal = current.startsWith('failed') || current.startsWith('undelivered') || current.startsWith('error');\nif (currentFinal) return [];\nif (!s.failed && (RANK[s.status] ?? 0) <= (RANK[current] ?? 0)) return [];\nreturn [{ json: {\n  wa_message_sid: s.wa_message_sid,\n  estado_entrega: s.failed ? s.status + (s.error_code ? ' (error ' + s.error_code + ')' : '') : s.status,\n  failed: s.failed,\n  lead_id: row.lead_id,\n  rol: row.rol\n} }];"
+      }
+    },
+    {
+      "id": "d-update",
+      "name": "Update Delivery Status",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        960,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1001,
+          "mode": "list",
+          "cachedResultName": "Conversaciones",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit#gid=1001"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "wa_message_sid": "={{ $json.wa_message_sid }}",
+            "estado_entrega": "={{ $json.estado_entrega }}"
+          },
+          "matchingColumns": [
+            "wa_message_sid"
+          ],
+          "schema": [
+            {
+              "id": "wa_message_sid",
+              "displayName": "wa_message_sid",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "estado_entrega",
+              "displayName": "estado_entrega",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      }
+    },
+    {
+      "id": "d-iffail",
+      "name": "Client Message Failed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        960,
+        700
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ff1",
+              "leftValue": "={{ $('Decide Update').first().json.failed && $('Decide Update').first().json.rol === 'assistant' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d-ctx",
+      "name": "Get Client Context",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1200,
+        700
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "YOUR_P31D_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "d-ifopener",
+      "name": "Opener Never Arrived?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1440,
+        700
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "op1",
+              "leftValue": "={{ $json.found === true && $json.lead.estado === 'contactado' }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d-mark",
+      "name": "Mark Contact Failed",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1680,
+        700
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1000,
+          "mode": "list",
+          "cachedResultName": "Leads",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit#gid=1000"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $json.lead.lead_id }}",
+            "estado": "contacto_fallido",
+            "ultima_actualizacion": "={{ $now.setZone('America/Phoenix').toFormat('yyyy-MM-dd HH:mm:ss') }}"
+          },
+          "matchingColumns": [
+            "lead_id"
+          ],
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "estado",
+              "displayName": "estado",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ultima_actualizacion",
+              "displayName": "ultima_actualizacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      }
+    },
+    {
+      "id": "d-main",
+      "name": "Sticky Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -20
+      ],
+      "parameters": {
+        "width": 1240,
+        "height": 250,
+        "color": 5,
+        "content": "## P31 - Delivery Status / Estado de entrega\n**EN:** Twilio accepts a message (201) and can fail later. Every message is sent with a StatusCallback to this webhook: Conversaciones.estado_entrega moves forward (delivered, read, failed). If the opening message never arrived, the lead becomes contacto_fallido so nobody waits for an answer that cannot come.\n\n**ES:** Twilio acepta el mensaje (201) y puede fallar después. Cada mensaje sale con StatusCallback a este webhook: Conversaciones.estado_entrega avanza (delivered, read, failed). Si la apertura nunca llegó, el lead queda contacto_fallido para que nadie espere una respuesta que no puede llegar."
+      }
+    },
+    {
+      "id": "dn-1",
+      "name": "Note - Twilio Status",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        440
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 200,
+        "color": 7,
+        "content": "📡 TWILIO STATUS / ESTADO DE TWILIO\n\nTwilio reports every status change of a message we sent.\nTwilio avisa cada cambio de estado de un mensaje que enviamos."
+      }
+    },
+    {
+      "id": "dn-2",
+      "name": "Note - Parse Status",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        180,
+        440
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 200,
+        "color": 7,
+        "content": "🧹 PARSE STATUS / LEER ESTADO\n\nKeeps only delivered, read, failed and undelivered.\nSolo deja delivered, read, failed y undelivered."
+      }
+    },
+    {
+      "id": "dn-3",
+      "name": "Note - Find Message",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        420,
+        440
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 200,
+        "color": 7,
+        "content": "🔎 FIND MESSAGE / BUSCAR MENSAJE\n\nThe Conversaciones row with that message SID.\nLa fila de Conversaciones con ese SID de mensaje."
+      }
+    },
+    {
+      "id": "dn-4",
+      "name": "Note - Decide Update",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        660,
+        440
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 200,
+        "color": 7,
+        "content": "🧮 DECIDE UPDATE / DECIDIR ACTUALIZACIÓN\n\nStatus only moves forward; callbacks can arrive out of order.\nEl estado solo avanza; los avisos pueden llegar desordenados."
+      }
+    },
+    {
+      "id": "dn-5",
+      "name": "Note - Update Delivery Status",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        900,
+        440
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 200,
+        "color": 7,
+        "content": "🗂️ UPDATE DELIVERY STATUS / ACTUALIZAR ENTREGA\n\nWrites estado_entrega in Conversaciones.\nEscribe estado_entrega en Conversaciones."
+      }
+    },
+    {
+      "id": "dn-6",
+      "name": "Note - Client Message Failed?",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        900,
+        840
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "🔀 CLIENT MESSAGE FAILED? / ¿FALLÓ UN MENSAJE A LA CLIENTA?\n\nOnly failed messages from the assistant go on.\nSolo siguen los mensajes fallidos de la asistente."
+      }
+    },
+    {
+      "id": "dn-7",
+      "name": "Note - Get Client Context",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1140,
+        840
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "🧩 GET CLIENT CONTEXT / TRAER CONTEXTO\n\nCurrent lead status from P31d.\nEstado actual del lead desde P31d."
+      }
+    },
+    {
+      "id": "dn-8",
+      "name": "Note - Opener Never Arrived?",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1380,
+        840
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "🔀 OPENER NEVER ARRIVED? / ¿LA APERTURA NUNCA LLEGÓ?\n\nTrue if the lead is still contactado: she never got our first message.\nSí si el lead sigue contactado: nunca recibió el primer mensaje."
+      }
+    },
+    {
+      "id": "dn-9",
+      "name": "Note - Mark Contact Failed",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1620,
+        840
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "🚫 MARK CONTACT FAILED / MARCAR CONTACTO FALLIDO\n\nLeads.estado = contacto_fallido so P32 uses email instead.\nLeads.estado = contacto_fallido para que P32 use email."
+      }
+    }
+  ],
+  "connections": {
+    "Twilio Status": {
+      "main": [
+        [
+          {
+            "node": "Parse Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Status": {
+      "main": [
+        [
+          {
+            "node": "Find Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Message": {
+      "main": [
+        [
+          {
+            "node": "Decide Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide Update": {
+      "main": [
+        [
+          {
+            "node": "Update Delivery Status",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Client Message Failed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Client Message Failed?": {
+      "main": [
+        [
+          {
+            "node": "Get Client Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Get Client Context": {
+      "main": [
+        [
+          {
+            "node": "Opener Never Arrived?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Opener Never Arrived?": {
+      "main": [
+        [
+          {
+            "node": "Mark Contact Failed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Phoenix",
+    "errorWorkflow": "YOUR_ERROR_WORKFLOW_ID"
+  }
+}

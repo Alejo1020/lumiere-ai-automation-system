@@ -1,0 +1,459 @@
+{
+  "name": "P36c - Lumière Monthly ROI",
+  "nodes": [
+    {
+      "id": "r-sched",
+      "name": "Day 1, 8 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 1 * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "r-manual",
+      "name": "Manual Test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        400
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "r-cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// DEMO_MODE = true: demo Sheet + October 2026 (vs. September). false: real Sheet, the month that just ended.\n// DEMO_MODE = true: Sheet demo + octubre 2026 (vs. septiembre). false: Sheet real, el mes que acaba de terminar.\nconst DEMO_MODE = true;\nconst SHEET_URL = {\n  real: 'https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit',\n  demo: 'https://docs.google.com/spreadsheets/d/YOUR_DEMO_GOOGLE_SHEET_ID/edit'\n};\nconst FIRMA = 'Tu equipo de automatización';   // who signs the report (the agency that runs the system) / quién firma el informe\nconst last = $now.setZone('America/Phoenix').minus({ months: 1 });\nconst r = DEMO_MODE\n  ? { sheet: 'demo', desde: '2026-10-01', hasta: '2026-10-31' }\n  : { sheet: 'real', desde: last.startOf('month').toFormat('yyyy-MM-dd'), hasta: last.endOf('month').toFormat('yyyy-MM-dd') };\nreturn [{ json: { ...r, sheet_url: SHEET_URL[r.sheet], firma: FIRMA, demo: DEMO_MODE } }];\n"
+      }
+    },
+    {
+      "id": "r-met",
+      "name": "Get Metrics",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "YOUR_P36D_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sheet": "={{ $json.sheet }}",
+            "desde": "={{ $json.desde }}",
+            "hasta": "={{ $json.hasta }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "sheet",
+              "displayName": "sheet",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "desde",
+              "displayName": "desde",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "hasta",
+              "displayName": "hasta",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "r-prompt",
+      "name": "Build ROI Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Sonnet writes ONE short paragraph (3 sentences) for the owner. It only gets numbers already computed and formatted\n// by P36d, and the next node rejects any number that is not in this data.\n// Sonnet escribe UN párrafo corto (3 frases) para la dueña. Solo recibe números ya calculados y formateados por P36d,\n// y el nodo siguiente rechaza cualquier número que no esté en estos datos.\nconst MODEL = 'claude-sonnet-5-5';\nconst m = $input.first().json;\nconst P = m.periodo, B = m.anterior, n = m.negocio || {};\nconst es = String(n.idioma_duena || 'en').startsWith('es');\nconst loc = es ? 'es-MX' : 'en-US';\nconst f = v => Math.round(v).toLocaleString(loc);\nconst usd = v => '$' + f(v);\nconst pct = (a, b) => (b > 0 ? Math.round(100 * (a - b) / b) : null);\nconst mes = d => DateTime.fromISO(d).setLocale(es ? 'es' : 'en').toFormat('LLLL');\nconst DATA = {\n  month: mes(P.desde), previous_month: mes(B.desde),\n  estimated_value: usd(P.total_usd), previous_estimated_value: usd(B.total_usd), value_change_pct: pct(P.total_usd, B.total_usd),\n  system_cost: usd(P.costo_sistema_usd), roi_multiple: P.roi_x !== null ? P.roi_x.toFixed(1) + 'x' : null, previous_roi_multiple: B.roi_x !== null ? B.roi_x.toFixed(1) + 'x' : null,\n  new_leads: P.leads, previous_new_leads: B.leads, leads_after_hours: P.leads_fuera_horario, avg_response_seconds: P.respuesta_prom_seg,\n  bookings_by_assistant: P.citas_agendadas, previous_bookings_by_assistant: B.citas_agendadas,\n  bookings_from_follow_up: P.citas_de_nurturing, clients_who_came_back: P.clientas_que_vuelven, recovered_value: usd(P.valor_recuperado_usd),\n  no_shows_avoided: P.no_shows_evitados, no_shows_avoided_value: usd(P.valor_no_shows_usd), real_no_show_rate_pct: P.tasa_no_show_pct,\n  hours_saved: Math.round(P.horas_ahorradas), hours_value: usd(P.valor_horas_usd),\n  average_rating: P.nota_promedio, reviews_requested: P.resenas_pedidas, low_rating_alerts: P.alertas_nota_baja,\n  open_cases_now: m.casos_abiertos\n};\nconst system = `You write one short note for the owner of ${n.nombre || 'a med spa'}, inside her monthly report email.\nWrite exactly 3 sentences in ${es ? 'Spanish (neutral Latin American, use \"tú\")' : 'English'}:\n1) The headline: the estimated value of the month compared with what the system cost.\n2) What improved compared with the previous month (pick the 1 or 2 most meaningful items).\n3) One practical thing to keep an eye on next month (for example open cases, low-rating alerts or no-shows), without alarm.\nRules (strict):\n- Use ONLY numbers that appear in DATA, written exactly as they appear there. Never calculate, round or invent a number, a percentage or a cause.\n- If a value is null, do not mention it.\n- Warm, direct, business tone. No greeting, no sign-off, no emojis, no markdown, no lists. Never give medical advice.\n- Respond ONLY with JSON: {\"parrafo\": \"...\"}`;\nreturn [{ json: {\n  es, data: DATA,\n  claude_body: { model: MODEL, max_tokens: 2000, system, messages: [{ role: 'user', content: 'DATA:\\n' + JSON.stringify(DATA, null, 1) }] }\n} }];\n"
+      }
+    },
+    {
+      "id": "r-claude",
+      "name": "Claude Write Note",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CLAUDE_CREDENTIAL_ID",
+          "name": "Claude API"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.claude_body) }}",
+        "options": {
+          "timeout": 60000
+        }
+      }
+    },
+    {
+      "id": "r-val",
+      "name": "Validate Note",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Accepts Claude's paragraph only if every number in it exists in DATA. Otherwise a fixed paragraph is used.\n// Acepta el párrafo de Claude solo si cada número que trae existe en DATA. Si no, se usa un párrafo fijo.\nconst DATA = $('Build ROI Prompt').first().json.data;\nconst r = $input.first().json || {};\nconst es = $('Build ROI Prompt').first().json.es;\nconst norm = s => String(s).replace(/[$,%x\\s]/gi, '').replace(/\\.0$/, '');\nconst allowed = new Set();\nfor (const v of Object.values(DATA)) if (v !== null && v !== undefined) for (const t of String(v).match(/\\d[\\d.,]*/g) || []) { allowed.add(norm(t)); allowed.add(norm(t).replace(/\\.$/, '')); }\n\nlet parrafo = '', motivo = '';\ntry {\n  const block = (r.content || []).find(b => b.type === 'text');\n  if (!block) throw new Error(r.error ? 'api_error' : 'no_text');\n  const txt = block.text.trim();\n  const j = JSON.parse(txt.slice(txt.indexOf('{'), txt.lastIndexOf('}') + 1));\n  parrafo = String(j.parrafo || '').replace(/\\s+/g, ' ').trim();\n  if (!parrafo || parrafo.length > 700) throw new Error('bad_length');\n  const bad = (parrafo.match(/\\d[\\d.,]*/g) || []).map(t => norm(t).replace(/[.,]$/, '')).filter(t => !allowed.has(t));\n  if (bad.length) throw new Error('numbers_not_in_data: ' + bad.join(' '));\n} catch (e) { motivo = String(e.message || e); parrafo = ''; }\n\nif (!parrafo) {\n  // Fixed fallback, same 3-part structure / párrafo fijo de respaldo, misma estructura\n  parrafo = es\n    ? `En ${DATA.month} el sistema generó un valor estimado de ${DATA.estimated_value}, frente a ${DATA.system_cost} que costó` + (DATA.roi_multiple ? ` (${DATA.roi_multiple}).` : '.')\n      + ` Sofía agendó ${DATA.bookings_by_assistant} citas sin recepcionista y se evitaron ${DATA.no_shows_avoided} inasistencias.`\n      + (DATA.open_cases_now ? ` Para el próximo mes, revisa los ${DATA.open_cases_now} casos abiertos con tu equipo.` : ' Para el próximo mes, mantén la agenda al día para que Sofía ofrezca horarios reales.')\n    : `In ${DATA.month} the system produced an estimated ${DATA.estimated_value} in value, against ${DATA.system_cost} in cost` + (DATA.roi_multiple ? ` (${DATA.roi_multiple}).` : '.')\n      + ` Sofía booked ${DATA.bookings_by_assistant} appointments with no front desk and ${DATA.no_shows_avoided} no-shows were avoided.`\n      + (DATA.open_cases_now ? ` Next month, review the ${DATA.open_cases_now} open cases with your team.` : ' Next month, keep the calendar up to date so Sofía offers real openings.');\n}\nreturn [{ json: { parrafo, fuente: motivo ? 'plantilla' : 'claude', motivo, usage: r.usage || null } }];\n"
+      }
+    },
+    {
+      "id": "r-email",
+      "name": "Build Report Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Monthly ROI email body (HTML blocks with the Lumière look, no images) → P32c in internal mode.\n// Cuerpo del informe mensual (bloques HTML con el estilo de Lumière, sin imágenes) → P32c en modo interno.\nconst cfg = $('Config').first().json;\nconst m = $('Get Metrics').first().json;\nconst { parrafo } = $input.first().json;\nconst P = m.periodo, B = m.anterior, n = m.negocio || {}, A = m.supuestos || {};\nconst es = String(n.idioma_duena || 'en').startsWith('es');\nconst loc = es ? 'es-MX' : 'en-US';\nconst f = v => (v === null || v === undefined ? '—' : Math.round(v).toLocaleString(loc));\nconst usd = v => '$' + f(v);\nconst dec = v => (v === null || v === undefined ? '—' : Number(v).toFixed(1));\nconst esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\nconst mesFmt = d => DateTime.fromISO(d).setLocale(es ? 'es' : 'en').toFormat('LLLL yyyy');\nconst mes = mesFmt(P.desde), mesAnt = DateTime.fromISO(B.desde).setLocale(es ? 'es' : 'en').toFormat('LLLL');\nconst cap = s => s.charAt(0).toUpperCase() + s.slice(1);\nconst change = (a, b) => {\n  if (a === null || b === null || b === undefined || b === 0) return '—';\n  const d = Math.round(100 * (a - b) / b);\n  return `<span style=\"color:${d >= 0 ? '#5B7B4F' : '#A0522D'};\">${d >= 0 ? '↑' : '↓'} ${Math.abs(d)} %</span>`;\n};\nconst C = { mist: '#F7F3EE', soft: '#EFE8DF', pale: '#DDD2C4', steel: '#75685C', slate: '#4A3F37', ink: '#2A2420', gold: '#B08D57' };\nconst SERIF = \"'Libre Caslon Condensed', Georgia, 'Times New Roman', serif\";\nconst SANS = \"Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif\";\nconst T = es ? {\n  kicker: 'INFORME MENSUAL', title: `Tu ${mes} con el sistema`, value: 'Valor estimado del mes',\n  roi: x => `${x} lo que pagas por el sistema (${usd(P.costo_sistema_usd)})`, vs: `vs. ${mesAnt}`,\n  tiles: [\n    ['LEADS ATENDIDOS', f(P.leads), `respuesta en ~${P.respuesta_prom_seg ?? '—'} s · ${f(P.leads_fuera_horario)} fuera de horario`],\n    ['CITAS SIN RECEPCIONISTA', f(P.citas_agendadas), `${P.conversion_lead_cita_pct} % de los leads terminó en cita`],\n    ['NO-SHOWS EVITADOS', f(P.no_shows_evitados), `≈ ${usd(P.valor_no_shows_usd)} · inasistencia real ${dec(P.tasa_no_show_pct)} %`],\n    ['CITAS RECUPERADAS', f(P.citas_de_nurturing + P.clientas_que_vuelven), `${f(P.citas_de_nurturing)} por seguimiento · ${f(P.clientas_que_vuelven)} volvieron · ≈ ${usd(P.valor_recuperado_usd)}`],\n    ['HORAS AHORRADAS', '~' + f(P.horas_ahorradas), `≈ ${usd(P.valor_horas_usd)} de recepción`],\n    ['REPUTACIÓN', dec(P.nota_promedio) + ' / 5', `${f(P.resenas_pedidas)} reseñas pedidas · ${f(P.alertas_nota_baja)} alertas atajadas`]\n  ],\n  table: 'Mes contra mes', cols: [cap(DateTime.fromISO(P.desde).setLocale('es').toFormat('LLLL')), cap(mesAnt), 'Cambio'],\n  rows: [['Leads nuevos', 'leads'], ['Citas agendadas por Sofía', 'citas_agendadas'], ['Citas recuperadas', null], ['No-shows evitados', 'no_shows_evitados'],\n         ['Horas ahorradas', 'horas_ahorradas'], ['Reseñas pedidas', 'resenas_pedidas'], ['Valor estimado', 'total_usd'], ['ROI', 'roi_x']],\n  how: 'Cómo lo calculamos',\n  howTxt: `Horas: cada tarea que hizo el sistema × los minutos que le tomaría a una persona, a $${A.valor_hora}/h. No-shows evitados: visitas con recordatorio × ${Math.round((A.no_show_base || 0) * 100)} % (inasistencia típica sin sistema) − las inasistencias reales. Citas recuperadas: agendadas después de un seguimiento o un mensaje de retoque, valoradas con el precio \"desde\" del servicio (consulta = $${A.consulta}). Todos los supuestos están en la hoja ROI y los puedes cambiar.`,\n  open: k => `⚠️ Hoy hay ${k} ${k === 1 ? 'caso abierto' : 'casos abiertos'} en Escalamientos esperando a tu equipo.`,\n  demo: 'Datos de demostración.', cta: 'Ver los datos', asunto: `📈 Tu informe de ${mes}: ${usd(P.total_usd)} de valor estimado`,\n  pre: `${cap(mes)}: ${usd(P.total_usd)} de valor estimado` + (P.roi_x !== null ? `, ${dec(P.roi_x)}x el costo del sistema.` : '.'),\n  pie: 'Informe automático del sistema Lumière. Los números salen de tu Google Sheet.'\n} : {\n  kicker: 'MONTHLY REPORT', title: `Your ${mes} with the system`, value: 'Estimated value this month',\n  roi: x => `${x} what you pay for the system (${usd(P.costo_sistema_usd)})`, vs: `vs. ${mesAnt}`,\n  tiles: [\n    ['LEADS ANSWERED', f(P.leads), `answered in ~${P.respuesta_prom_seg ?? '—'}s · ${f(P.leads_fuera_horario)} after hours`],\n    ['BOOKED WITH NO FRONT DESK', f(P.citas_agendadas), `${P.conversion_lead_cita_pct} % of leads booked`],\n    ['NO-SHOWS AVOIDED', f(P.no_shows_evitados), `≈ ${usd(P.valor_no_shows_usd)} · actual no-show rate ${dec(P.tasa_no_show_pct)} %`],\n    ['RECOVERED BOOKINGS', f(P.citas_de_nurturing + P.clientas_que_vuelven), `${f(P.citas_de_nurturing)} from follow-up · ${f(P.clientas_que_vuelven)} came back · ≈ ${usd(P.valor_recuperado_usd)}`],\n    ['HOURS SAVED', '~' + f(P.horas_ahorradas), `≈ ${usd(P.valor_horas_usd)} of front-desk time`],\n    ['REPUTATION', dec(P.nota_promedio) + ' / 5', `${f(P.resenas_pedidas)} reviews requested · ${f(P.alertas_nota_baja)} alerts caught`]\n  ],\n  table: 'Month over month', cols: [cap(DateTime.fromISO(P.desde).setLocale('en').toFormat('LLLL')), cap(mesAnt), 'Change'],\n  rows: [['New leads', 'leads'], ['Booked by Sofía', 'citas_agendadas'], ['Recovered bookings', null], ['No-shows avoided', 'no_shows_evitados'],\n         ['Hours saved', 'horas_ahorradas'], ['Reviews requested', 'resenas_pedidas'], ['Estimated value', 'total_usd'], ['ROI', 'roi_x']],\n  how: 'How we calculate it',\n  howTxt: `Hours: every task the system did × the minutes it would take a person, at $${A.valor_hora}/h. No-shows avoided: reminded visits × ${Math.round((A.no_show_base || 0) * 100)} % (typical no-show rate without the system) − actual no-shows. Recovered bookings: booked after a follow-up or touch-up message, valued at the service's starting price (consultation = $${A.consulta}). Every assumption lives in the ROI sheet and you can change it.`,\n  open: k => `⚠️ There ${k === 1 ? 'is 1 open case' : `are ${k} open cases`} in Escalamientos waiting for your team.`,\n  demo: 'Demo data.', cta: 'See the data', asunto: `📈 Your ${mes} report: ${usd(P.total_usd)} in estimated value`,\n  pre: `${cap(mes)}: ${usd(P.total_usd)} in estimated value` + (P.roi_x !== null ? `, ${dec(P.roi_x)}x the system's cost.` : '.'),\n  pie: 'Automatic report from the Lumière system. Numbers come from your Google Sheet.'\n};\nconst cell = k => {\n  if (k === null) return [f(P.citas_de_nurturing + P.clientas_que_vuelven), f(B.citas_de_nurturing + B.clientas_que_vuelven), change(P.citas_de_nurturing + P.clientas_que_vuelven, B.citas_de_nurturing + B.clientas_que_vuelven)];\n  if (k === 'total_usd') return [usd(P[k]), usd(B[k]), change(P[k], B[k])];\n  if (k === 'roi_x') return [P[k] === null ? '—' : dec(P[k]) + 'x', B[k] === null ? '—' : dec(B[k]) + 'x', change(P[k], B[k])];\n  return [f(P[k]), f(B[k]), change(P[k], B[k])];\n};\nconst tile = ([label, big, sub]) => `<td width=\"50%\" valign=\"top\" style=\"padding:6px;\"><div style=\"background:${C.mist};border:1px solid ${C.pale};padding:16px 16px 14px;\">\n  <div style=\"font-family:${SANS};font-size:10px;letter-spacing:0.18em;color:${C.steel};\">${esc(label)}</div>\n  <div style=\"font-family:${SERIF};font-size:34px;line-height:1.1;color:${C.ink};margin-top:6px;\">${esc(big)}</div>\n  <div style=\"font-family:${SANS};font-size:12px;line-height:1.45;color:${C.slate};margin-top:4px;\">${esc(sub)}</div></div></td>`;\nconst tilesHtml = [0, 2, 4].map(k => `<tr>${tile(T.tiles[k])}${tile(T.tiles[k + 1])}</tr>`).join('');\nconst th = `font-family:${SANS};font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:${C.steel};padding:8px 6px;border-bottom:1px solid ${C.pale};`;\nconst td = `font-family:${SANS};font-size:14px;color:${C.ink};padding:9px 6px;border-bottom:1px solid ${C.soft};`;\nconst rowsHtml = T.rows.map(([label, k]) => { const [a, b, c] = cell(k); return `<tr><td style=\"${td}\">${esc(label)}</td><td align=\"right\" style=\"${td}font-weight:500;white-space:nowrap;\">${a}</td><td align=\"right\" style=\"${td}color:${C.steel};white-space:nowrap;\">${b}</td><td align=\"right\" style=\"${td}white-space:nowrap;\">${c}</td></tr>`; }).join('');\n\nconst html = `\n<div style=\"font-family:${SANS};font-size:11px;letter-spacing:0.3em;color:${C.gold};\">${T.kicker}</div>\n<div style=\"font-family:${SERIF};font-size:30px;line-height:1.15;color:${C.ink};margin:8px 0 26px;\">${esc(T.title)}</div>\n<div style=\"border-top:1px solid ${C.pale};border-bottom:1px solid ${C.pale};padding:22px 0;margin-bottom:24px;text-align:center;\">\n  <div style=\"font-family:${SANS};font-size:11px;letter-spacing:0.2em;text-transform:uppercase;color:${C.steel};\">${esc(T.value)}</div>\n  <div style=\"font-family:${SERIF};font-size:54px;line-height:1.05;color:${C.ink};margin:6px 0;\">${usd(P.total_usd)}</div>\n  ${P.roi_x !== null ? `<div style=\"font-family:${SANS};font-size:15px;color:${C.slate};\"><strong style=\"color:${C.ink};\">${dec(P.roi_x)}x</strong> ${esc(T.roi('').trim())}</div>` : ''}\n  <div style=\"font-family:${SANS};font-size:13px;color:${C.steel};margin-top:6px;\">${esc(T.vs)}: ${usd(B.total_usd)} · ${change(P.total_usd, B.total_usd)}</div>\n</div>\n<p style=\"margin:0 0 24px;font-family:${SANS};font-size:16px;line-height:1.65;color:${C.ink};\">${esc(parrafo)}</p>\n<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin:0 -6px 24px;\">${tilesHtml}</table>\n<div style=\"font-family:${SERIF};font-size:22px;color:${C.ink};margin:8px 0 10px;\">${esc(T.table)}</div>\n<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"margin-bottom:24px;\">\n  <tr><td style=\"${th}\"></td><td align=\"right\" style=\"${th}\">${esc(T.cols[0])}</td><td align=\"right\" style=\"${th}\">${esc(T.cols[1])}</td><td align=\"right\" style=\"${th}\">${esc(T.cols[2])}</td></tr>\n  ${rowsHtml}\n</table>\n${m.casos_abiertos ? `<p style=\"margin:0 0 20px;padding:12px 14px;background:${C.soft};font-family:${SANS};font-size:14px;color:${C.ink};\">${esc(T.open(m.casos_abiertos))}</p>` : ''}\n<div style=\"font-family:${SANS};font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:${C.steel};margin-bottom:6px;\">${esc(T.how)}</div>\n<p style=\"margin:0 0 18px;font-family:${SANS};font-size:12px;line-height:1.6;color:${C.steel};\">${esc(T.howTxt)}${cfg.demo ? ' ' + esc(T.demo) : ''}</p>`;\n\nif (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(String(n.email_duena || ''))) return [];\n// Inputs of P32c - Lumière Send Email, internal mode / entrada de P32c en modo interno\nreturn [{ json: {\n  email: n.email_duena, asunto: T.asunto, mensaje: T.pre, idioma: es ? 'es' : 'en', origen: 'P36',\n  interno: true, html_cuerpo: html, cta_texto: T.cta, cta_url: cfg.sheet_url, firma: cfg.firma, pie: T.pie + (cfg.demo ? ' ' + T.demo : '')\n} }];\n"
+      }
+    },
+    {
+      "id": "r-send",
+      "name": "Send Report",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2100,
+        300
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "YOUR_P32C_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "r-main",
+      "name": "Sticky Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -180
+      ],
+      "parameters": {
+        "width": 2420,
+        "height": 240,
+        "color": 5,
+        "content": "## P36c - Monthly ROI / Informe mensual de ROI\n**EN:** On day 1 at 8 AM (Arizona) the owner gets a branded email with last month in money: estimated value vs. what the system costs (ROI), leads answered, bookings with no front desk, no-shows avoided, recovered bookings, hours saved, reputation, month over month, and how every number is calculated. Sonnet writes only a 3-sentence note, and any number it writes must exist in the data (otherwise a fixed note is used). This is what justifies the retainer every month.\n\n**ES:** El día 1 a las 8 a. m. (Arizona) la dueña recibe un correo con la marca y el mes pasado en plata: valor estimado vs. lo que cuesta el sistema (ROI), leads atendidos, citas sin recepcionista, no-shows evitados, citas recuperadas, horas ahorradas, reputación, mes contra mes y cómo se calcula cada número. Sonnet solo escribe una nota de 3 frases y todo número que escriba debe existir en los datos (si no, va una nota fija). Esto justifica el retainer cada mes."
+      }
+    },
+    {
+      "id": "r-n0",
+      "name": "Note - Triggers",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        520
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "⏰ TRIGGERS / DISPARADORES\n\nDay 1 of each month 8:00 Arizona (cron 0 8 1 * *) or Manual Test.\nDía 1 de cada mes 8:00 Arizona (cron 0 8 1 * *) o Manual Test."
+      }
+    },
+    {
+      "id": "r-n1",
+      "name": "Note - Config",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        520
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "⚙️ CONFIG\n\nDEMO_MODE true = demo Sheet, Oct 2026 vs Sep. false = real Sheet, the month that just ended. Signature of the report.\nDEMO_MODE true = Sheet demo, oct vs sep. false = Sheet real, el mes que terminó. Firma del informe."
+      }
+    },
+    {
+      "id": "r-n2",
+      "name": "Note - Get Metrics",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        540,
+        520
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🧮 GET METRICS / TRAER MÉTRICAS\n\nP36d: the month + the previous calendar month.\nP36d: el mes + el mes calendario anterior."
+      }
+    },
+    {
+      "id": "r-n3",
+      "name": "Note - Build ROI Prompt",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        840,
+        520
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🧠 BUILD PROMPT / ARMAR PROMPT\n\nOnly pre-formatted numbers go to Claude (no raw data, no client names).\nA Claude solo van números ya formateados (sin datos crudos ni nombres de clientas)."
+      }
+    },
+    {
+      "id": "r-n4",
+      "name": "Note - Claude Write Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1140,
+        520
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "✍️ CLAUDE (SONNET)\n\n3 sentences: headline, what improved, what to watch. JSON out. ~$0.02/month.\n3 frases: resultado, qué mejoró, qué vigilar. Sale en JSON. ~$0,02/mes."
+      }
+    },
+    {
+      "id": "r-n5",
+      "name": "Note - Validate Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        520
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🛡️ VALIDATE NOTE / VALIDAR NOTA\n\nEvery number must exist in the data; otherwise a fixed note is used.\nTodo número debe existir en los datos; si no, va una nota fija."
+      }
+    },
+    {
+      "id": "r-n6",
+      "name": "Note - Build Report Email",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1740,
+        520
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🎨 BUILD EMAIL / ARMAR CORREO\n\nHero value + ROI, 6 KPI tiles, month over month, how it is calculated. No images.\nValor + ROI, 6 tarjetas, mes contra mes, cómo se calcula. Sin imágenes."
+      }
+    },
+    {
+      "id": "r-n7",
+      "name": "Note - Send Report",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2040,
+        520
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "📧 SEND REPORT / ENVIAR INFORME\n\nP32c in internal mode → Negocio.email_duena (no unsubscribe link: not marketing).\nP32c en modo interno → Negocio.email_duena (sin link de baja: no es marketing)."
+      }
+    }
+  ],
+  "connections": {
+    "Day 1, 8 AM": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Test": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Get Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Metrics": {
+      "main": [
+        [
+          {
+            "node": "Build ROI Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build ROI Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude Write Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Write Note": {
+      "main": [
+        [
+          {
+            "node": "Validate Note",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Note": {
+      "main": [
+        [
+          {
+            "node": "Build Report Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Report Email": {
+      "main": [
+        [
+          {
+            "node": "Send Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Phoenix",
+    "errorWorkflow": "YOUR_ERROR_WORKFLOW_ID"
+  }
+}

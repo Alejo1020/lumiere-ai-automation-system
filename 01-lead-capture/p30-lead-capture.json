@@ -1,0 +1,969 @@
+{
+  "name": "P30 - Lumière Lead Capture",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lumiere-lead",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "https://lumiere-aesthetics.pages.dev"
+        }
+      },
+      "id": "n-webhook",
+      "name": "Lead Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        304
+      ],
+      "webhookId": "3c0b7a52-5d6e-4f1a-9b2e-8a4f6c1d2e30"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Valida y limpia el lead que llega de la landing (nunca confiar solo en el navegador)\nconst b = $input.first().json.body || {};\nconst txt = (v) => (v == null ? '' : String(v)).trim();\nconst errores = [];\n\n// Honeypot: campo oculto que solo llenan los bots\nif (txt(b.website)) errores.push('spam');\n\nconst nombre = txt(b.nombre).slice(0, 120);\nif (nombre.length < 2) errores.push('nombre');\n\n// WhatsApp a E.164: 10 dígitos = EEUU/Canadá (+1); con código de país, 11 a 15 dígitos\nconst digits = txt(b.telefono).replace(/\\D/g, '');\nlet whatsapp = '';\nif (digits.length === 10) whatsapp = '+1' + digits;\nelse if (digits.length >= 11 && digits.length <= 15) whatsapp = '+' + digits;\nelse errores.push('telefono');\n\nconst tratamiento = txt(b.servicio).slice(0, 80);\nif (!tratamiento) errores.push('servicio');\n\n// Email opcional, pero si viene debe tener formato válido\nconst email = txt(b.email).toLowerCase().slice(0, 160);\nif (email && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) errores.push('email');\n\n// Consentimiento: obligatorio, con el canal y el texto exacto que aceptó.\n// Acepta también el payload viejo (sms_consent) para que ningún lead falle durante el cambio.\nconst esViejo = b.consent === undefined && b.sms_consent !== undefined;\nconst consent = [true, 'true'].includes(esViejo ? b.sms_consent : b.consent);\nconst consent_canal = esViejo ? 'sms' : (['whatsapp', 'sms'].includes(txt(b.consent_canal)) ? txt(b.consent_canal) : 'whatsapp');\nconst consent_text = txt(b.consent_text).slice(0, 1000);\nif (!consent) errores.push('consent');\nelse if (!consent_text) errores.push('consent_text');\n\nconst ahora = $now.setZone('America/Phoenix').toFormat('yyyy-MM-dd HH:mm:ss');\n\nreturn [{ json: {\n  valido: errores.length === 0,\n  errores,\n  nombre,\n  whatsapp,\n  email,\n  tratamiento,\n  primera_vez: ['si', 'no'].includes(txt(b.primera_vez)) ? txt(b.primera_vez) : '',\n  comentario: txt(b.comentario).slice(0, 1000),\n  idioma: txt(b.idioma) === 'es' ? 'es' : 'en',\n  consent_canal,\n  consent_text,\n  fecha: ahora\n} }];"
+      },
+      "id": "n-validate",
+      "name": "Validate Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-valido",
+              "leftValue": "={{ $json.valido }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "n-if",
+      "name": "Is Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1000,
+          "mode": "list",
+          "cachedResultName": "Leads",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit#gid=1000"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "whatsapp",
+              "lookupValue": "={{ $json.whatsapp }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n-find",
+      "name": "Find Existing Lead",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        960,
+        208
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Une el lead nuevo con la fila que ya existía (la misma persona envía otra vez)\nconst lead = $('Validate Lead').first().json;\nconst previo = $input.first().json || {}; // vacío si es lead nuevo (Always Output Data)\nconst existe = Boolean(previo.row_number);\n\n// Historial: \"Botox / Dysport → Láser facial\" (no repite si elige el mismo dos veces seguidas)\nconst historial = existe ? String(previo.tratamientos_historial || previo.tratamiento || '').split(' → ').filter(Boolean) : [];\nif (historial[historial.length - 1] !== lead.tratamiento) historial.push(lead.tratamiento);\n\nconst nuevoId = 'LUM-' + $now.setZone('America/Phoenix').toFormat('yyyyMMdd') + '-' + Math.random().toString(36).slice(2, 7).toUpperCase();\n\nreturn [{ json: {\n  lead_id: existe && previo.lead_id ? previo.lead_id : nuevoId,\n  fecha_creacion: existe && previo.fecha_creacion ? previo.fecha_creacion : lead.fecha,\n  nombre: lead.nombre,\n  whatsapp: lead.whatsapp,\n  email: lead.email || (existe ? previo.email || '' : ''),\n  tratamiento: lead.tratamiento,\n  tratamientos_historial: historial.join(' → '),\n  primera_vez: lead.primera_vez || (existe ? previo.primera_vez || '' : ''),\n  comentario: lead.comentario,\n  idioma: lead.idioma,\n  consent_canal: lead.consent_canal,\n  consent_text: lead.consent_text,\n  consent_fecha: lead.fecha,\n  estado: existe && previo.estado ? previo.estado : 'nuevo',   // P31 define los demás estados\n  envios: existe ? (Number(previo.envios) || 1) + 1 : 1,\n  ultima_actualizacion: lead.fecha,\n  es_duplicado: existe\n} }];"
+      },
+      "id": "n-prepare",
+      "name": "Prepare Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1000,
+          "mode": "list",
+          "cachedResultName": "Leads",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit#gid=1000"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $json.lead_id }}",
+            "fecha_creacion": "={{ $json.fecha_creacion }}",
+            "nombre": "={{ $json.nombre }}",
+            "whatsapp": "={{ $json.whatsapp }}",
+            "email": "={{ $json.email }}",
+            "tratamiento": "={{ $json.tratamiento }}",
+            "tratamientos_historial": "={{ $json.tratamientos_historial }}",
+            "primera_vez": "={{ $json.primera_vez }}",
+            "comentario": "={{ $json.comentario }}",
+            "idioma": "={{ $json.idioma }}",
+            "consent_canal": "={{ $json.consent_canal }}",
+            "consent_text": "={{ $json.consent_text }}",
+            "consent_fecha": "={{ $json.consent_fecha }}",
+            "estado": "={{ $json.estado }}",
+            "envios": "={{ $json.envios }}",
+            "ultima_actualizacion": "={{ $json.ultima_actualizacion }}"
+          },
+          "matchingColumns": [
+            "whatsapp"
+          ],
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fecha_creacion",
+              "displayName": "fecha_creacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nombre",
+              "displayName": "nombre",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "whatsapp",
+              "displayName": "whatsapp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tratamiento",
+              "displayName": "tratamiento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tratamientos_historial",
+              "displayName": "tratamientos_historial",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "primera_vez",
+              "displayName": "primera_vez",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "comentario",
+              "displayName": "comentario",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "idioma",
+              "displayName": "idioma",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "consent_canal",
+              "displayName": "consent_canal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "consent_text",
+              "displayName": "consent_text",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "consent_fecha",
+              "displayName": "consent_fecha",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estado",
+              "displayName": "estado",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "envios",
+              "displayName": "envios",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ultima_actualizacion",
+              "displayName": "ultima_actualizacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "n-save",
+      "name": "Update Lead",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1680,
+        112
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true\n}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "n-ok",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        720,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, errores: $json.errores }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "n-err",
+      "name": "Respond Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        816,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 1 · Intake & validation / Entrada y validación\n**EN:** The landing page POSTs the lead. Only the landing domain is allowed (CORS). `Validate Lead` cleans the data, converts the WhatsApp number to E.164, checks required fields (name, WhatsApp, treatment, consent) and the anti-bot honeypot. Consent is stored with its channel (`whatsapp`, or `sms`: the same system works with SMS) and the exact text accepted.\n\n**ES:** La landing hace POST con el lead. Solo acepta el dominio de la landing (CORS). `Validate Lead` limpia los datos, pasa el WhatsApp a E.164, revisa obligatorios (nombre, WhatsApp, tratamiento, consentimiento) y el honeypot anti-bots. El consentimiento se guarda con su canal (`whatsapp`, o `sms`: el mismo sistema funciona con SMS) y el texto exacto que aceptó.",
+        "height": 620,
+        "width": 700,
+        "color": 5
+      },
+      "id": "s-1",
+      "name": "Sticky Entrada",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -64,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 2 · Fast reply, then save / Respuesta rápida y guardado (hoja `Leads`)\n**EN:** A valid lead gets the 200 right away, so the landing jumps to the thank-you page. Then it looks up the WhatsApp number. New lead → `Append Lead` calls the Sheets API `values:append` directly (atomic: two leads in the same second never overwrite each other, which n8n's append/appendOrUpdate did). Repeat submission → `Update Lead` updates the same row, keeps `lead_id` and first-contact date, increments `envios` and extends `tratamientos_historial`. If Google Sheets fails, the Error Workflow emails an alert.\n\n**ES:** Un lead válido recibe el 200 de una y la landing salta a gracias. Después busca el WhatsApp. Lead nuevo → `Append Lead` llama directo a `values:append` de la API de Sheets (atómico: dos leads en el mismo segundo ya no se pisan, como pasaba con append/appendOrUpdate de n8n). Si la persona envía otra vez → `Update Lead` actualiza su fila, conserva `lead_id` y la fecha del primer contacto, suma `envios` y alarga `tratamientos_historial`. Si Google Sheets falla, el Error Workflow manda un correo de alerta.",
+        "height": 400,
+        "width": 1300,
+        "color": 4
+      },
+      "id": "s-2",
+      "name": "Sticky Guardado",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        672,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## 3 · Invalid data / Datos inválidos\n**EN:** Responds 400 with the `errores` list; the landing shows its error state. Nothing is saved.\n\n**ES:** Responde 400 con la lista de `errores`; la landing muestra su estado de error. No se guarda nada.",
+        "height": 400,
+        "width": 532,
+        "color": 3
+      },
+      "id": "s-3",
+      "name": "Sticky Error",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        672,
+        384
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// A lead who was already handled fills the form again: strong buying signal -> tell the team.\n// Un lead que ya se atendió vuelve a llenar el formulario: señal fuerte -> avisar al equipo.\nconst TEAM_WHATSAPP = 'whatsapp:YOUR_PHONE'; // demo: Alejo's phone / en la demo, el celular de Alejo\nconst BOT_IS_HANDLING = ['nuevo', 'contactado', 'en_conversacion']; // P31 is already on it / P31 ya lo está atendiendo\n\nconst row = $('Prepare Row').first().json;\nif (!row.es_duplicado || BOT_IS_HANDLING.includes(row.estado)) return [];\n\nconst SERVICE_EN = {\n  'Botox / Dysport': 'Botox / Dysport',\n  'Rellenos dérmicos': 'Dermal Fillers',\n  'Microneedling con PRP': 'Microneedling with PRP',\n  'Láser facial': 'Laser Facial',\n  'HydraFacial': 'HydraFacial',\n  'Depilación láser': 'Laser Hair Removal',\n  'Membresías / paquetes mensuales': 'Memberships & Monthly Plans',\n  'No estoy segura': 'Not sure yet'\n};\nconst en = s => SERVICE_EN[s] || s;\n\nconst lines = [\n  '🔁 RETURNING LEAD - filled the form again',\n  'Name: ' + row.nombre,\n  'WhatsApp: ' + row.whatsapp,\n  'Now interested in: ' + en(row.tratamiento),\n  'Services history: ' + String(row.tratamientos_historial || '').split(' → ').map(en).join(' -> '),\n  'Form submissions: ' + row.envios,\n  'Current status: ' + row.estado,\n  row.comentario ? 'Comment: ' + row.comentario : '',\n  'Lead ID: ' + row.lead_id\n].filter(Boolean);\n\nreturn [{ json: { to: TEAM_WHATSAPP, mensaje: lines.join('\\n').slice(0, 1500), lead_id: row.lead_id } }];"
+      },
+      "id": "n-returning",
+      "name": "Build Returning Lead Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2224,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.twilio.com/2010-04-01/Accounts/YOUR_TWILIO_ACCOUNT_SID/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "From",
+              "value": "whatsapp:YOUR_TWILIO_WHATSAPP_NUMBER"
+            },
+            {
+              "name": "To",
+              "value": "={{ $json.to }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $json.mensaje }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "n-returning-send",
+      "name": "Send Returning Lead Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2464,
+        112
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "YOUR_TWILIO_CREDENTIAL_ID",
+          "name": "Twilio"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "content": "🔁 BUILD RETURNING LEAD ALERT / ARMAR AVISO DE LEAD QUE VUELVE\n\nIf an already-handled lead fills the form again, builds a summary for the team; otherwise stops.\nSi un lead ya atendido vuelve a llenar el formulario, arma un resumen para el equipo; si no, termina.",
+        "height": 230,
+        "width": 260
+      },
+      "id": "n-returning-note1",
+      "name": "Note - Build Returning Lead Alert",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2176,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "content": "📣 SEND RETURNING LEAD ALERT / ENVIAR AVISO AL EQUIPO\n\nSends it to the team's WhatsApp (Twilio); a failure here never breaks the lead capture.\nLo envía al WhatsApp del equipo (Twilio); si falla, no afecta la captura del lead.",
+        "height": 230,
+        "width": 260
+      },
+      "id": "n-returning-note2",
+      "name": "Note - Send Returning Lead Alert",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2432,
+        -208
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-dup",
+              "leftValue": "={{ $json.es_duplicado }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "n-isreturning",
+      "name": "Is Returning Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1440,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/YOUR_GOOGLE_SHEET_ID/values/Leads!A1:P1:append",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "valueInputOption",
+              "value": "RAW"
+            },
+            {
+              "name": "insertDataOption",
+              "value": "INSERT_ROWS"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [[ $json.lead_id, $json.fecha_creacion, $json.nombre, $json.whatsapp, $json.email, $json.tratamiento, $json.tratamientos_historial, $json.primera_vez, $json.comentario, $json.idioma, $json.consent_canal, $json.consent_text, $json.consent_fecha, $json.estado, $json.envios, $json.ultima_actualizacion ]] }) }}",
+        "options": {}
+      },
+      "id": "n-append-http",
+      "name": "Append Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        304
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "n-first-contact",
+      "name": "Start First Contact",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1920,
+        304
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "YOUR_P31A_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $('Prepare Row').first().json.lead_id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string"
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "n-first-contact-note",
+      "name": "Note - Start First Contact",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1872,
+        464
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "### 🚀 HAND OFF TO P31 / PASAR A P31\nStarts P31a (first WhatsApp) without waiting: the lead is already saved.\n\nArranca P31a (primer WhatsApp) sin esperar: el lead ya quedó guardado."
+      }
+    },
+    {
+      "id": "n-evt-new",
+      "name": "Emit Lead Event",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2160,
+        304
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "YOUR_P36A_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo": "lead_llega",
+            "proyecto": "P30",
+            "lead_id": "={{ $('Prepare Row').first().json.lead_id }}",
+            "ref_id": "",
+            "detalle": "={{ String($('Prepare Row').first().json.nombre || '').split(' ')[0] }} llegó desde la landing · {{ $('Prepare Row').first().json.tratamiento }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tipo",
+              "displayName": "tipo",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "proyecto",
+              "displayName": "proyecto",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ref_id",
+              "displayName": "ref_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "detalle",
+              "displayName": "detalle",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "n-evt-ret",
+      "name": "Emit Returning Lead Event",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1920,
+        -60
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "YOUR_P36A_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo": "lead_llega",
+            "proyecto": "P30",
+            "lead_id": "={{ $('Prepare Row').first().json.lead_id }}",
+            "ref_id": "",
+            "detalle": "={{ String($('Prepare Row').first().json.nombre || '').split(' ')[0] }} volvió a llenar el formulario · {{ $('Prepare Row').first().json.tratamiento }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tipo",
+              "displayName": "tipo",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "proyecto",
+              "displayName": "proyecto",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ref_id",
+              "displayName": "ref_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "detalle",
+              "displayName": "detalle",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "n-evt-note",
+      "name": "Note - Emit Lead Event",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2112,
+        464
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🏢 EMIT OFFICE EVENT / EVENTO PARA LA OFICINA\n\nlead_llega → P36a (Eventos sheet). Fire and forget: never blocks the lead.\nlead_llega → P36a (hoja Eventos). Dispara y sigue: nunca frena el lead."
+      }
+    }
+  ],
+  "connections": {
+    "Lead Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Lead": {
+      "main": [
+        [
+          {
+            "node": "Is Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Valid?": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond Success": {
+      "main": [
+        [
+          {
+            "node": "Find Existing Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Existing Lead": {
+      "main": [
+        [
+          {
+            "node": "Prepare Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Row": {
+      "main": [
+        [
+          {
+            "node": "Is Returning Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Returning Lead?": {
+      "main": [
+        [
+          {
+            "node": "Update Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Append Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead": {
+      "main": [
+        [
+          {
+            "node": "Build Returning Lead Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Emit Returning Lead Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Returning Lead Alert": {
+      "main": [
+        [
+          {
+            "node": "Send Returning Lead Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Lead": {
+      "main": [
+        [
+          {
+            "node": "Start First Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start First Contact": {
+      "main": [
+        [
+          {
+            "node": "Emit Lead Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Phoenix",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "binaryMode": "separate",
+    "errorWorkflow": "YOUR_ERROR_WORKFLOW_ID"
+  }
+}

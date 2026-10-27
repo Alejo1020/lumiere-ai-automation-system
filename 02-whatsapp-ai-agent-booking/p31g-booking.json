@@ -1,0 +1,1606 @@
+{
+  "name": "P31g - Lumière Booking",
+  "nodes": [
+    {
+      "id": "b-trigger",
+      "name": "When Called",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "request",
+              "type": "object"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b-validate",
+      "name": "Validate Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// Checks the request against the Negocio rules BEFORE touching the calendar.\n// Revisa la petición contra las reglas de Negocio ANTES de tocar el calendario.\n// request: { op: book|reschedule|cancel|confirm, lead_id, nombre, whatsapp, servicio_id, servicio, duracion_min,\n//            start: 'yyyy-MM-dd HH:mm', cita (active appointment row or null), negocio }\nconst r = $('When Called').first().json.request || {};\nconst n = r.negocio || {};\nconst tz = n.zona_horaria || 'America/Phoenix';\nconst BLOCK = Number(n.bloque_min) || 60;\nconst op = r.op;\nconst cita = r.cita && r.cita.cita_id ? r.cita : null;\nconst parse = v => { const m = String(v || '').match(/(\\d{1,2}):(\\d{2})\\s*-\\s*(\\d{1,2}):(\\d{2})/); return m ? { o: +m[1] * 60 + +m[2], c: +m[3] * 60 + +m[4] } : null; };\nconst HOURS = { 1: parse(n.horario_lun_vie), 2: parse(n.horario_lun_vie), 3: parse(n.horario_lun_vie), 4: parse(n.horario_lun_vie), 5: parse(n.horario_lun_vie), 6: parse(n.horario_sab), 7: parse(n.horario_dom) };\n\nlet error = '';\nif (!['book', 'reschedule', 'cancel', 'confirm'].includes(op)) error = 'invalid_op';\nelse if (op !== 'book' && !cita) error = 'no_active_appointment';\nelse if (!n.calendar_id) error = 'calendar_error';\n\nlet s = null, e = null;\nif (!error && op !== 'cancel' && op !== 'confirm') {\n  s = DateTime.fromFormat(String(r.start || ''), 'yyyy-MM-dd HH:mm', { zone: tz });\n  if (!s.isValid) error = 'invalid_time';\n  else {\n    const blocks = Math.max(1, Math.ceil((Number(r.duracion_min) || BLOCK) / BLOCK)); // 90 min = 2 bloques\n    e = s.plus({ minutes: blocks * BLOCK });\n    const now = $now.setZone(tz);\n    const h = HOURS[s.weekday];\n    const sMin = s.hour * 60 + s.minute;\n    if (!h || sMin < h.o || sMin + blocks * BLOCK > h.c || (sMin - h.o) % BLOCK !== 0) error = 'outside_hours';\n    else if (s.toMillis() < now.plus({ hours: Number(n.anticipacion_min_horas) || 2 }).toMillis()) error = 'too_soon';\n    else if (s.toMillis() > now.plus({ days: Number(n.dias_max_agenda) || 14 }).endOf('day').toMillis()) error = 'too_far';\n  }\n}\n\n// She said \"yes\" twice: the same appointment already exists -> nothing to do\n// Dijo \"sí\" dos veces: la misma cita ya existe -> no se hace nada\nconst dup = !error && op === 'book' && cita && cita.inicio === r.start;\nconst now = $now.setZone(tz);\n\nreturn [{ json: {\n  op, error, dup, tz,\n  calId: n.calendar_id,\n  calIdEnc: encodeURIComponent(n.calendar_id || ''),\n  start: s && s.isValid ? s.toFormat('yyyy-MM-dd HH:mm') : '',\n  end: e ? e.toFormat('yyyy-MM-dd HH:mm') : '',\n  startISO: s && s.isValid ? s.toISO() : '',\n  endISO: e ? e.toISO() : '',\n  new_cita_id: 'CIT-' + now.toFormat('yyyyMMdd') + '-' + Math.random().toString(36).slice(2, 7).toUpperCase(),\n  fb_body: e ? { timeMin: s.toISO(), timeMax: e.toISO(), timeZone: tz, items: [{ id: n.calendar_id }] } : null,\n  check_calendar: !error && !dup && op !== 'cancel' && op !== 'confirm',\n  do_cancel: !error && op === 'cancel',\n  do_confirm: !error && op === 'confirm',   // P33: she answered \"yes\" to a reminder / respondió \"sí\" a un recordatorio\n  request: r,\n  cita\n} }];"
+      }
+    },
+    {
+      "id": "b-ifcheck",
+      "name": "Check Calendar?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.check_calendar }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b-fb",
+      "name": "Check Slot",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "YOUR_GOOGLE_CALENDAR_CREDENTIAL_ID",
+          "name": "Google Calendar account"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/calendar/v3/freeBusy",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleCalendarOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.fb_body) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b-decide",
+      "name": "Slot Decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// Is the slot still free right now? (her own current appointment does not block a reschedule)\n// ¿El horario sigue libre en este momento? (su propia cita actual no bloquea una reprogramación)\nconst v = $('Validate Request').first().json;\nconst res = $input.first().json || {};\nconst cal = (res.calendars || {})[v.calId] || {};\nif (cal.errors || !res.calendars) return [{ json: { free: false, error: 'calendar_error' } }];\nlet busy = (cal.busy || []).map(b => ({ s: DateTime.fromISO(b.start).toMillis(), e: DateTime.fromISO(b.end).toMillis() }));\nconst c = v.cita;\nif (v.op === 'reschedule' && c && c.inicio && c.fin) {\n  const cs = DateTime.fromFormat(c.inicio, 'yyyy-MM-dd HH:mm', { zone: v.tz }).toMillis();\n  const ce = DateTime.fromFormat(c.fin, 'yyyy-MM-dd HH:mm', { zone: v.tz }).toMillis();\n  busy = busy.filter(b => !(b.s >= cs && b.e <= ce));\n}\nconst s = DateTime.fromISO(v.startISO).toMillis();\nconst e = DateTime.fromISO(v.endISO).toMillis();\nreturn [{ json: { free: !busy.some(b => b.s < e && b.e > s), error: '' } }];"
+      }
+    },
+    {
+      "id": "b-iffree",
+      "name": "Is Slot Free?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1200,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f1",
+              "leftValue": "={{ $json.free }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b-isbook",
+      "name": "Is New Booking?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1440,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "o1",
+              "leftValue": "={{ $('Validate Request').first().json.op }}",
+              "rightValue": "book",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b-create",
+      "name": "Create Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        -200
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "YOUR_GOOGLE_CALENDAR_CREDENTIAL_ID",
+          "name": "Google Calendar account"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "=https://www.googleapis.com/calendar/v3/calendars/{{ $('Validate Request').first().json.calIdEnc }}/events",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleCalendarOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const v = $('Validate Request').first().json; const r = v.request; return JSON.stringify({ summary: r.servicio + ' — ' + r.nombre, description: 'WhatsApp: ' + r.whatsapp + '\\nLead: ' + r.lead_id + '\\nCita: ' + v.new_cita_id + '\\nAgendada por la asistente virtual (P31)', start: { dateTime: v.start.replace(' ', 'T') + ':00', timeZone: v.tz }, end: { dateTime: v.end.replace(' ', 'T') + ':00', timeZone: v.tz } }); })() }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b-created",
+      "name": "Event Created?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1920,
+        -200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ec1",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b-row",
+      "name": "Build Cita Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        -200
+      ],
+      "parameters": {
+        "jsCode": "// Row for the Citas sheet / Fila para la hoja Citas\nconst v = $('Validate Request').first().json;\nconst r = v.request;\nconst ev = $('Create Event').first().json;\nconst fecha = $now.setZone(v.tz).toFormat('yyyy-MM-dd HH:mm:ss');\nreturn [{ json: { cita_id: v.new_cita_id, event_id: ev.id,\n  row: [v.new_cita_id, r.lead_id, r.nombre, r.whatsapp, r.servicio, v.start, v.end, ev.id, 'agendada', 'P31', fecha, fecha] } }];"
+      }
+    },
+    {
+      "id": "b-save",
+      "name": "Save Cita",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2400,
+        -200
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/YOUR_GOOGLE_SHEET_ID/values/Citas!A1:L1:append",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "valueInputOption",
+              "value": "RAW"
+            },
+            {
+              "name": "insertDataOption",
+              "value": "INSERT_ROWS"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [ $json.row ] }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b-move",
+      "name": "Move Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1680,
+        600
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "YOUR_GOOGLE_CALENDAR_CREDENTIAL_ID",
+          "name": "Google Calendar account"
+        }
+      },
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://www.googleapis.com/calendar/v3/calendars/{{ $('Validate Request').first().json.calIdEnc }}/events/{{ $('Validate Request').first().json.cita.calendar_event_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleCalendarOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const v = $('Validate Request').first().json; return JSON.stringify({ colorId: null, start: { dateTime: v.start.replace(' ', 'T') + ':00', timeZone: v.tz }, end: { dateTime: v.end.replace(' ', 'T') + ':00', timeZone: v.tz } }); })() }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "b-moved",
+      "name": "Event Moved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1920,
+        600
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "em1",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b-upd",
+      "name": "Update Cita",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2160,
+        600
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1002,
+          "mode": "list",
+          "cachedResultName": "Citas",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit#gid=1002"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "cita_id": "={{ $('Validate Request').first().json.cita.cita_id }}",
+            "inicio": "={{ $('Validate Request').first().json.start }}",
+            "fin": "={{ $('Validate Request').first().json.end }}",
+            "estado": "reprogramada",
+            "ultima_actualizacion": "={{ $now.setZone('America/Phoenix').toFormat('yyyy-MM-dd HH:mm:ss') }}"
+          },
+          "matchingColumns": [
+            "cita_id"
+          ],
+          "schema": [
+            {
+              "id": "cita_id",
+              "displayName": "cita_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "inicio",
+              "displayName": "inicio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "fin",
+              "displayName": "fin",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "estado",
+              "displayName": "estado",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ultima_actualizacion",
+              "displayName": "ultima_actualizacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      }
+    },
+    {
+      "id": "b-ifcancel",
+      "name": "Is Cancel?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        1000
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "x1",
+              "leftValue": "={{ $json.do_cancel }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b-del",
+      "name": "Delete Event",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        1000
+      ],
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "YOUR_GOOGLE_CALENDAR_CREDENTIAL_ID",
+          "name": "Google Calendar account"
+        }
+      },
+      "parameters": {
+        "method": "DELETE",
+        "url": "=https://www.googleapis.com/calendar/v3/calendars/{{ $json.calIdEnc }}/events/{{ $json.cita.calendar_event_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleCalendarOAuth2Api",
+        "options": {}
+      }
+    },
+    {
+      "id": "b-cancel",
+      "name": "Cancel Cita",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1200,
+        1000
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1002,
+          "mode": "list",
+          "cachedResultName": "Citas",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit#gid=1002"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "cita_id": "={{ $('Validate Request').first().json.cita.cita_id }}",
+            "estado": "cancelada",
+            "ultima_actualizacion": "={{ $now.setZone('America/Phoenix').toFormat('yyyy-MM-dd HH:mm:ss') }}"
+          },
+          "matchingColumns": [
+            "cita_id"
+          ],
+          "schema": [
+            {
+              "id": "cita_id",
+              "displayName": "cita_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "estado",
+              "displayName": "estado",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ultima_actualizacion",
+              "displayName": "ultima_actualizacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      }
+    },
+    {
+      "id": "b-result",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2700,
+        600
+      ],
+      "parameters": {
+        "jsCode": "// What the caller gets: ok + the appointment, or the reason it could not be done.\n// Lo que recibe quien llamó: ok + la cita, o el motivo por el que no se pudo.\n// reason: taken | outside_hours | too_soon | too_far | invalid_time | no_active_appointment | calendar_error | invalid_op | already_booked\nconst v = $('Validate Request').first().json;\nconst r = v.request;\nconst ran = n => $(n).isExecuted;\nlet ok = false, reason = v.error || '', cita_id = v.cita ? v.cita.cita_id : '';\nif (v.dup) { ok = true; reason = 'already_booked'; }\nelse if (!v.error) {\n  if (v.op === 'cancel') ok = ran('Cancel Cita');\n  else if (v.op === 'confirm') ok = ran('Confirm Cita');\n  else {\n    const d = $('Slot Decision').first().json;\n    if (!d.free) reason = d.error || 'taken';\n    else if (v.op === 'book') { ok = ran('Save Cita'); cita_id = v.new_cita_id; if (!ok) reason = 'calendar_error'; }\n    else { ok = ran('Update Cita'); if (!ok) reason = 'calendar_error'; }\n  }\n}\nreturn [{ json: { ok, op: v.op, reason: ok && reason !== 'already_booked' ? '' : reason, cita_id,\n  inicio: v.start || (v.cita ? v.cita.inicio : ''), fin: v.end || (v.cita ? v.cita.fin : ''), servicio: r.servicio || (v.cita ? v.cita.servicio : '') } }];"
+      }
+    },
+    {
+      "id": "b-main",
+      "name": "Sticky Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -620
+      ],
+      "parameters": {
+        "width": 1240,
+        "height": 230,
+        "color": 5,
+        "content": "## P31 - Booking (shared piece / pieza compartida)\n**EN:** Books, reschedules, cancels or confirms (P33 reminders) an appointment. Validates hours, notice and window from the Negocio sheet, re-checks the calendar right before writing (no double booking), then updates Google Calendar and the Citas sheet. Returns ok or the reason. Used by P31 (chat) and later by P33 (reminders) and P35 (touch-ups).\n\n**ES:** Agenda, reprograma, cancela o confirma (recordatorios de P33) una cita. Valida horario, anticipación y ventana (hoja Negocio), vuelve a mirar el calendario justo antes de escribir (sin dobles reservas) y actualiza Google Calendar y la hoja Citas. Devuelve ok o el motivo. Lo usan P31 y después P33 y P35."
+      }
+    },
+    {
+      "id": "bn-1",
+      "name": "Note - When Called",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        340
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "📥 BOOKING REQUEST / PETICIÓN DE CITA\n\nop book, reschedule or cancel + client, service, start and active appointment.\nop agendar, reprogramar o cancelar + clienta, servicio, inicio y cita activa."
+      }
+    },
+    {
+      "id": "bn-2",
+      "name": "Note - Validate Request",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        180,
+        340
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "✅ VALIDATE REQUEST / VALIDAR PETICIÓN\n\nChecks hours, notice, window and duplicates with the Negocio rules.\nRevisa horario, anticipación, ventana y duplicados con las reglas de Negocio."
+      }
+    },
+    {
+      "id": "bn-3",
+      "name": "Note - Check Calendar?",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        420,
+        340
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "🔀 CHECK CALENDAR? / ¿REVISAR CALENDARIO?\n\nValid book or reschedule goes to the calendar; the rest to cancel or result.\nAgendar o reprogramar válido va al calendario; lo demás a cancelar o al resultado."
+      }
+    },
+    {
+      "id": "bn-4",
+      "name": "Note - Check Slot",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        660,
+        340
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "📅 CHECK SLOT / REVISAR HORARIO\n\nAsks Google Calendar again right before writing: no double booking.\nVuelve a preguntar a Google Calendar justo antes de escribir: sin doble reserva."
+      }
+    },
+    {
+      "id": "bn-5",
+      "name": "Note - Slot Decision",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        900,
+        340
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "🧮 SLOT DECISION / DECISIÓN DEL HORARIO\n\nFree or taken; her own appointment does not block a reschedule.\nLibre u ocupado; su propia cita no bloquea una reprogramación."
+      }
+    },
+    {
+      "id": "bn-6",
+      "name": "Note - Is Slot Free?",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1140,
+        340
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "🔀 IS SLOT FREE? / ¿HORARIO LIBRE?\n\nTaken goes straight to the result with reason taken.\nSi está ocupado va directo al resultado con motivo taken."
+      }
+    },
+    {
+      "id": "bn-7",
+      "name": "Note - Is New Booking?",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1380,
+        340
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "🔀 NEW OR RESCHEDULE? / ¿NUEVA O REPROGRAMAR?\n\nBook creates an event; reschedule moves the existing one.\nAgendar crea un evento; reprogramar mueve el que ya existe."
+      }
+    },
+    {
+      "id": "bn-8",
+      "name": "Note - Create Event",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1620,
+        -60
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "➕ CREATE EVENT / CREAR EVENTO\n\nNew event in Lumière - Citas with client, WhatsApp and IDs.\nEvento nuevo en Lumière - Citas con clienta, WhatsApp e IDs."
+      }
+    },
+    {
+      "id": "bn-9",
+      "name": "Note - Event Created?",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1860,
+        -60
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "🔀 EVENT CREATED? / ¿EVENTO CREADO?\n\nOnly a real event gets a row in Citas.\nSolo un evento real genera fila en Citas."
+      }
+    },
+    {
+      "id": "bn-10",
+      "name": "Note - Build Cita Row",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        -60
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "🧾 BUILD APPOINTMENT ROW / ARMAR FILA DE CITA\n\nCIT- id, times, event id and status agendada.\nID CIT-, horario, id del evento y estado agendada."
+      }
+    },
+    {
+      "id": "bn-11",
+      "name": "Note - Save Cita",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2340,
+        -60
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "🗂️ SAVE APPOINTMENT / GUARDAR CITA\n\nAtomic append to the Citas sheet.\nAppend atómico en la hoja Citas."
+      }
+    },
+    {
+      "id": "bn-12",
+      "name": "Note - Move Event",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1620,
+        740
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "↔️ MOVE EVENT / MOVER EVENTO\n\nSame calendar event, new start and end; clears the green \"confirmed\" color.\nMismo evento del calendario, nuevo inicio y fin; le quita el verde de \"confirmada\"."
+      }
+    },
+    {
+      "id": "bn-13",
+      "name": "Note - Event Moved?",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1860,
+        740
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "🔀 EVENT MOVED? / ¿EVENTO MOVIDO?\n\nThe sheet only changes if the calendar did.\nLa hoja solo cambia si cambió el calendario."
+      }
+    },
+    {
+      "id": "bn-14",
+      "name": "Note - Update Cita",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2100,
+        740
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "🗂️ UPDATE APPOINTMENT / ACTUALIZAR CITA\n\nNew times and status reprogramada in Citas.\nNuevo horario y estado reprogramada en Citas."
+      }
+    },
+    {
+      "id": "bn-15",
+      "name": "Note - Is Cancel?",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        660,
+        1140
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "🔀 IS CANCEL? / ¿ES CANCELACIÓN?\n\nValid cancel goes on; errors and duplicates go to the result.\nCancelar válido sigue; errores y duplicados van al resultado."
+      }
+    },
+    {
+      "id": "bn-16",
+      "name": "Note - Delete Event",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        900,
+        1140
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "🗑️ DELETE EVENT / BORRAR EVENTO\n\nFrees the slot in the calendar.\nLibera el espacio en el calendario."
+      }
+    },
+    {
+      "id": "bn-17",
+      "name": "Note - Cancel Cita",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1140,
+        1140
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "🗂️ CANCEL APPOINTMENT / CANCELAR CITA\n\nStatus cancelada in Citas (the row stays as history).\nEstado cancelada en Citas (la fila queda como historial)."
+      }
+    },
+    {
+      "id": "bn-18",
+      "name": "Note - Return Result",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2640,
+        740
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "↩️ RETURN RESULT / DEVOLVER RESULTADO\n\nok + appointment, or the reason (taken, too_soon, outside_hours...).\nok + la cita, o el motivo (taken, too_soon, outside_hours...)."
+      }
+    },
+    {
+      "id": "b-ifconfirm",
+      "name": "Is Confirm?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        960,
+        1400
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cf1",
+              "leftValue": "={{ $('Validate Request').first().json.do_confirm ? true : false }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b-color",
+      "name": "Mark Event Confirmed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        1400
+      ],
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://www.googleapis.com/calendar/v3/calendars/{{ $('Validate Request').first().json.calIdEnc }}/events/{{ $('Validate Request').first().json.cita.calendar_event_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleCalendarOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ colorId: '10' }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "YOUR_GOOGLE_CALENDAR_CREDENTIAL_ID",
+          "name": "Google Calendar account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "b-confirm",
+      "name": "Confirm Cita",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1440,
+        1400
+      ],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1002,
+          "mode": "list",
+          "cachedResultName": "Citas",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_GOOGLE_SHEET_ID/edit#gid=1002"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "cita_id": "={{ $('Validate Request').first().json.cita.cita_id }}",
+            "estado": "confirmada",
+            "ultima_actualizacion": "={{ $now.setZone('America/Phoenix').toFormat('yyyy-MM-dd HH:mm:ss') }}"
+          },
+          "matchingColumns": [
+            "cita_id"
+          ],
+          "schema": [
+            {
+              "id": "cita_id",
+              "displayName": "cita_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "estado",
+              "displayName": "estado",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "ultima_actualizacion",
+              "displayName": "ultima_actualizacion",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "bn-19",
+      "name": "Note - Is Confirm?",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        900,
+        1540
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "🔀 IS CONFIRM? / ¿ES CONFIRMACIÓN?\n\nShe said yes to a P33 reminder; anything else goes to the result.\nDijo sí a un recordatorio de P33; lo demás va al resultado."
+      }
+    },
+    {
+      "id": "bn-20",
+      "name": "Note - Mark Event Confirmed",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1140,
+        1540
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "🟢 MARK EVENT CONFIRMED / MARCAR EVENTO CONFIRMADO\n\nGreen event in Google Calendar: the owner sees it on her phone.\nEvento en verde en Google Calendar: la dueña lo ve en el celular."
+      }
+    },
+    {
+      "id": "bn-21",
+      "name": "Note - Confirm Cita",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1380,
+        1540
+      ],
+      "parameters": {
+        "width": 230,
+        "height": 210,
+        "color": 7,
+        "content": "🗂️ CONFIRM APPOINTMENT / CONFIRMAR CITA\n\nStatus confirmada in Citas; P33 then only sends the friendly 2 h reminder.\nEstado confirmada en Citas; P33 solo manda el \"te esperamos\" de las 2 h."
+      }
+    },
+    {
+      "id": "b-evt-book",
+      "name": "Emit Booking Event",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2660,
+        -200
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "YOUR_P36A_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo": "cita_agendada",
+            "proyecto": "P31",
+            "lead_id": "={{ $('Validate Request').first().json.request.lead_id }}",
+            "ref_id": "={{ $('Build Cita Row').first().json.cita_id }}",
+            "detalle": "={{ String($('Validate Request').first().json.request.nombre || '').split(' ')[0] }} agendó {{ $('Validate Request').first().json.request.servicio }} · {{ $('Validate Request').first().json.start }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tipo",
+              "displayName": "tipo",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "proyecto",
+              "displayName": "proyecto",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ref_id",
+              "displayName": "ref_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "detalle",
+              "displayName": "detalle",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "b-evt-conf",
+      "name": "Emit Confirm Event",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1700,
+        1400
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "YOUR_P36A_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo": "recordatorio_confirmado",
+            "proyecto": "P33",
+            "lead_id": "={{ $('Validate Request').first().json.request.lead_id }}",
+            "ref_id": "={{ $('Validate Request').first().json.cita.cita_id }}",
+            "detalle": "={{ String($('Validate Request').first().json.cita.nombre || '').split(' ')[0] }} confirmó su cita de {{ $('Validate Request').first().json.cita.servicio }} · {{ $('Validate Request').first().json.cita.inicio }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tipo",
+              "displayName": "tipo",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "proyecto",
+              "displayName": "proyecto",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ref_id",
+              "displayName": "ref_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "detalle",
+              "displayName": "detalle",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "bn-evt-book",
+      "name": "Note - Emit Booking Event",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2610,
+        -60
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🏢 EMIT BOOKING EVENT / EVENTO DE CITA\n\ncita_agendada → P36a (Eventos). Fire and forget; the result still comes from Return Result.\ncita_agendada → P36a (Eventos). Dispara y sigue; el resultado sigue saliendo de Return Result."
+      }
+    },
+    {
+      "id": "bn-evt-conf",
+      "name": "Note - Emit Confirm Event",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1650,
+        1540
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🏢 EMIT CONFIRM EVENT / EVENTO DE CONFIRMACIÓN\n\nrecordatorio_confirmado (P33) → P36a. Fire and forget.\nrecordatorio_confirmado (P33) → P36a. Dispara y sigue."
+      }
+    }
+  ],
+  "connections": {
+    "When Called": {
+      "main": [
+        [
+          {
+            "node": "Validate Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Request": {
+      "main": [
+        [
+          {
+            "node": "Check Calendar?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Calendar?": {
+      "main": [
+        [
+          {
+            "node": "Check Slot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Cancel?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Slot": {
+      "main": [
+        [
+          {
+            "node": "Slot Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slot Decision": {
+      "main": [
+        [
+          {
+            "node": "Is Slot Free?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Slot Free?": {
+      "main": [
+        [
+          {
+            "node": "Is New Booking?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is New Booking?": {
+      "main": [
+        [
+          {
+            "node": "Create Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Move Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Event": {
+      "main": [
+        [
+          {
+            "node": "Event Created?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Event Created?": {
+      "main": [
+        [
+          {
+            "node": "Build Cita Row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Cita Row": {
+      "main": [
+        [
+          {
+            "node": "Save Cita",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Move Event": {
+      "main": [
+        [
+          {
+            "node": "Event Moved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Event Moved?": {
+      "main": [
+        [
+          {
+            "node": "Update Cita",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Cita": {
+      "main": [
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Cancel?": {
+      "main": [
+        [
+          {
+            "node": "Delete Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Is Confirm?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Event": {
+      "main": [
+        [
+          {
+            "node": "Cancel Cita",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cancel Cita": {
+      "main": [
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Confirm?": {
+      "main": [
+        [
+          {
+            "node": "Mark Event Confirmed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Event Confirmed": {
+      "main": [
+        [
+          {
+            "node": "Confirm Cita",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Cita": {
+      "main": [
+        [
+          {
+            "node": "Emit Booking Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Booking Event": {
+      "main": [
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirm Cita": {
+      "main": [
+        [
+          {
+            "node": "Emit Confirm Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Confirm Event": {
+      "main": [
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Phoenix",
+    "errorWorkflow": "YOUR_ERROR_WORKFLOW_ID",
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}

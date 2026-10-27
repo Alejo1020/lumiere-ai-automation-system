@@ -1,0 +1,542 @@
+{
+  "name": "P34b - Lumière Rating",
+  "nodes": [
+    {
+      "id": "r-trig",
+      "name": "When Called",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "r-build",
+      "name": "Build Rating",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        250,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Turns the client's 1-5 rating into: a Calificaciones row + the fixed reply + (1-3) an owner alert and an escalation.\n// Convierte la nota 1-5 de la clienta en: fila de Calificaciones + respuesta fija + (1-3) alerta a la dueña y escalamiento.\n// Input / entrada (from P31b - Lumière WhatsApp Inbound): { request: { lead_id, nombre, whatsapp, idioma, cita_id, servicio,\n//   servicio_en, inicio, score, comment, texto, negocio } }\n// 4-5 → Google review link (resena_pedida). 1-3 → no public review, owner alerted, case opened (alerta_duena).\n// Google policy: everyone may review; we only choose WHEN to ask. Nothing is paid or gated.\nconst HIGH_MIN = 4;\nconst r = $input.first().json.request || $input.first().json;\nconst n = r.negocio || {};\nconst tz = n.zona_horaria || 'America/Phoenix';\nconst now = $now.setZone(tz);\nconst score = Math.round(Number(r.score));\nif (!(score >= 1 && score <= 5) || !r.lead_id || !r.cita_id) {\n  return [{ json: { ok: false, reason: 'invalid_request', score: r.score } }];\n}\nconst lang = String(r.idioma || 'es').toLowerCase().startsWith('en') ? 'en' : 'es';\nconst nombre = String(r.nombre || '').trim().split(/\\s+/)[0] || '';\nconst comment = String(r.comment || '').trim().slice(0, 500);\nconst high = score >= HIGH_MIN;\nconst link = n.link_resena_google || '';\nconst spa = n.nombre || 'Lumière Aesthetics';\nconst rand = () => Math.random().toString(36).slice(2, 7).toUpperCase();\nconst fecha = now.toFormat('yyyy-MM-dd HH:mm:ss');\nconst calId = 'CAL-' + now.toFormat('yyyyMMdd') + '-' + rand();\n\nconst T = {\n  es: {\n    high: `¡Gracias, ${nombre}! 💛 Nos alegra mucho que te haya ido tan bien. ¿Nos ayudas con una reseña en Google? Toma menos de un minuto y ayuda a otras mujeres a encontrarnos:\\n${link}`,\n    low: `Gracias por contarnos, ${nombre}, y lamentamos que tu experiencia no haya sido la que esperabas. Ya se lo comuniqué a la dirección de ${spa}. ¿Nos cuentas qué pasó? Una persona del equipo leerá tu mensaje y te escribirá por aquí muy pronto. 🤍`\n  },\n  en: {\n    high: `Thank you, ${nombre}! 💛 We're so happy it went well. Would you help us with a Google review? It takes less than a minute and helps other women find us:\\n${link}`,\n    low: `Thank you for telling us, ${nombre}, and we're sorry your visit wasn't what you expected. I've already shared it with the management at ${spa}. Would you tell us what happened? Someone from the team will read your message and reach out here very soon. 🤍`\n  }\n};\nconst mensaje = T[lang][high ? 'high' : 'low'];\nconst resultado = high ? 'resena_pedida' : 'alerta_duena';\nconst out = {\n  ok: true, score, high, resultado, mensaje, calificacion_id: calId,\n  estado: high ? null : 'escalado',                         // null = P31b keeps its own estado\n  cal_row: [calId, fecha, r.lead_id, r.cita_id, r.servicio, score, comment, resultado]\n};\n\nif (!high) {\n  // Same escalation format as P31b (motivo queja): Sofía stays silent and forwards her messages until the team closes it.\n  // Mismo formato de escalamiento que P31b (motivo queja): Sofía calla y le reenvía al equipo hasta que lo cierren.\n  const escId = 'ESC-' + now.toFormat('yyyyMMdd') + '-' + rand();\n  const resumen = `Low post-visit rating ${score}/5 for ${r.servicio_en || r.servicio} (${r.inicio}).` + (comment ? ` Comment: \"${comment}\"` : ' No comment yet.');\n  out.escalamiento_id = escId;\n  out.esc_row = [escId, r.lead_id, r.nombre, r.whatsapp, fecha, 'queja', resumen, 'abierto', '', ''];\n  // Inputs of P31e - Lumière Send WhatsApp (rol alerta_equipo: logged under the client, hidden from her chat)\n  out.alert = {\n    lead_id: r.lead_id,\n    whatsapp: '+' + String(n.whatsapp_equipo || '').replace(/\\D/g, ''),\n    rol: 'alerta_equipo', origen: 'P34',\n    mensaje: [\n      `⭐ LOW RATING ${score}/5 - act before it becomes a public review`,\n      'Client: ' + r.nombre,\n      'WhatsApp: ' + r.whatsapp,\n      'Service: ' + (r.servicio_en || r.servicio) + ' (' + r.inicio + ')',\n      comment ? 'Comment: \"' + comment + '\"' : 'Comment: (none yet, she was asked what happened)',\n      'Case: ' + escId,\n      'No review was requested. ' + (n.nombre_asistente || 'Sofía') + ' stops replying until you set estado = cerrado in Escalamientos.'\n    ].join('\\n')\n  };\n}\nreturn [{ json: out }];\n"
+      }
+    },
+    {
+      "id": "r-valid",
+      "name": "Valid Rating?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        500,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.ok === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "r-savecal",
+      "name": "Save Calificacion",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        750,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/YOUR_GOOGLE_SHEET_ID/values/Calificaciones!A1:H1:append",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "valueInputOption",
+              "value": "RAW"
+            },
+            {
+              "name": "insertDataOption",
+              "value": "INSERT_ROWS"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [ $('Build Rating').first().json.cal_row ] }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "r-low",
+      "name": "Is Low Rating?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1000,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $('Build Rating').first().json.high === false }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "r-saveesc",
+      "name": "Save Escalation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1250,
+        100
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/YOUR_GOOGLE_SHEET_ID/values/Escalamientos!A1:J1:append",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "valueInputOption",
+              "value": "RAW"
+            },
+            {
+              "name": "insertDataOption",
+              "value": "INSERT_ROWS"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [ $('Build Rating').first().json.esc_row ] }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "r-prepalert",
+      "name": "Prepare Owner Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        100
+      ],
+      "parameters": {
+        "jsCode": "// Inputs of P31e - Lumière Send WhatsApp: the owner (Negocio.whatsapp_duena) and the team if it is another number.\n// Entrada de P31e: la dueña (Negocio.whatsapp_duena) y el equipo si es otro número (nunca dos veces al mismo).\nconst a = $('Build Rating').first().json.alert;\nconst r = $('When Called').first().json;\nconst n = (r.request || r).negocio || {};\nconst norm = v => '+' + String(v || '').replace(/\\D/g, '');\nconst to = [...new Set([norm(n.whatsapp_duena), norm(n.whatsapp_equipo)].filter(w => w.length >= 12))];\nif (!to.length) return [{ json: a }];   // no number in Negocio: P31e logs the failure and the flow still returns / sin número: P31e registra el fallo y el flujo igual devuelve\nreturn to.map((w, i) => ({ json: { ...a, whatsapp: w, rol: i === 0 && norm(n.whatsapp_duena) === w ? 'alerta_duena' : 'alerta_equipo' } }));"
+      }
+    },
+    {
+      "id": "r-alert",
+      "name": "Send Owner Alert",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1750,
+        100
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "mode": "each",
+        "workflowId": {
+          "__rl": true,
+          "value": "YOUR_P31E_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "r-ret",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// What P31b gets back: the fixed reply for the client and her new Leads.estado (null = keep).\n// Lo que recibe P31b: la respuesta fija para la clienta y su nuevo Leads.estado (null = se queda igual).\nconst b = $('Build Rating').first().json;\nreturn [{ json: {\n  ok: b.ok === true, reason: b.reason || '', score: b.score, resultado: b.resultado || '',\n  mensaje: b.mensaje || '', estado: b.estado || null,\n  calificacion_id: b.calificacion_id || '', escalamiento_id: b.escalamiento_id || ''\n} }];\n"
+      }
+    },
+    {
+      "id": "r-over",
+      "name": "Note Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -260
+      ],
+      "parameters": {
+        "width": 720,
+        "height": 240,
+        "color": 3,
+        "content": "# P34b - Lumière Rating (shared piece / pieza compartida)\n**EN:** Called by P31b when Sofía reads a 1-5 rating after a visit. Saves it in Calificaciones. 4-5 → fixed reply with the Google review link. 1-3 → no review request: apologetic reply, case in Escalamientos (queja) and WhatsApp alert to the owner, so it is fixed in private before it becomes a public review.\n**ES:** La llama P31b cuando Sofía lee una nota 1-5 después de la cita. La guarda en Calificaciones. 4-5 → respuesta fija con el link de reseña en Google. 1-3 → sin pedir reseña: disculpa, caso en Escalamientos (queja) y alerta por WhatsApp a la dueña, para resolverlo en privado antes de que sea una reseña pública."
+      }
+    },
+    {
+      "id": "r-n1",
+      "name": "Note Build",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        190,
+        500
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 6,
+        "content": "## 🧮 BUILD RATING / ARMAR NOTA\n**EN:** Validates the score (1-5), builds the Calificaciones row, the fixed ES/EN reply and, for 1-3, the escalation row + owner alert.\n**ES:** Valida la nota (1-5), arma la fila de Calificaciones, la respuesta fija ES/EN y, para 1-3, la fila de escalamiento + alerta a la dueña."
+      }
+    },
+    {
+      "id": "r-n2",
+      "name": "Note Save",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        690,
+        500
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 4,
+        "content": "## 🧾 SAVE / GUARDAR\n**EN:** values:append RAW into Calificaciones (and Escalamientos for 1-3).\n**ES:** values:append RAW en Calificaciones (y en Escalamientos si es 1-3)."
+      }
+    },
+    {
+      "id": "r-n3",
+      "name": "Note Alert",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        -140
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 220,
+        "color": 2,
+        "content": "## 🚨 OWNER ALERT / ALERTA A LA DUEÑA\n**EN:** Low rating → WhatsApp to Negocio.whatsapp_equipo via P31e. While the case is open Sofía stays quiet and forwards her messages to the team.\n**ES:** Nota baja → WhatsApp a Negocio.whatsapp_equipo por P31e. Mientras el caso esté abierto Sofía calla y le reenvía sus mensajes al equipo."
+      }
+    },
+    {
+      "id": "r-n4",
+      "name": "Note Return",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1940,
+        500
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "## ↩️ RETURN / DEVOLVER\n**EN:** { ok, mensaje, estado, resultado } back to P31b, which sends the reply.\n**ES:** { ok, mensaje, estado, resultado } de vuelta a P31b, que envía la respuesta."
+      }
+    },
+    {
+      "id": "r-evt",
+      "name": "Emit Rating Event",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        875,
+        0
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "YOUR_P36A_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo": "={{ $('Build Rating').first().json.high ? 'resena' : 'escalamiento' }}",
+            "proyecto": "P34",
+            "lead_id": "={{ $('Build Rating').first().json.cal_row[2] }}",
+            "ref_id": "={{ $('Build Rating').first().json.high ? $('Build Rating').first().json.calificacion_id : $('Build Rating').first().json.escalamiento_id }}",
+            "detalle": "={{ $('Build Rating').first().json.high ? 'Nota ' + $('Build Rating').first().json.score + '/5 en ' + $('Build Rating').first().json.cal_row[4] + ' · se pidió reseña en Google' : 'Nota ' + $('Build Rating').first().json.score + '/5 en ' + $('Build Rating').first().json.cal_row[4] + ' · alerta a la dueña' }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tipo",
+              "displayName": "tipo",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "proyecto",
+              "displayName": "proyecto",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ref_id",
+              "displayName": "ref_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "detalle",
+              "displayName": "detalle",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "r-n5",
+      "name": "Note Event",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        760,
+        -230
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "## 🏢 OFFICE EVENT / EVENTO\n**EN:** 4-5 → resena, 1-3 → escalamiento, sent to P36a. Fire and forget.\n**ES:** 4-5 → resena, 1-3 → escalamiento, a P36a. Dispara y sigue."
+      }
+    }
+  ],
+  "connections": {
+    "When Called": {
+      "main": [
+        [
+          {
+            "node": "Build Rating",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Rating": {
+      "main": [
+        [
+          {
+            "node": "Valid Rating?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Rating?": {
+      "main": [
+        [
+          {
+            "node": "Save Calificacion",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Low Rating?": {
+      "main": [
+        [
+          {
+            "node": "Save Escalation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Escalation": {
+      "main": [
+        [
+          {
+            "node": "Prepare Owner Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Owner Alert": {
+      "main": [
+        [
+          {
+            "node": "Send Owner Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Owner Alert": {
+      "main": [
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Calificacion": {
+      "main": [
+        [
+          {
+            "node": "Emit Rating Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Rating Event": {
+      "main": [
+        [
+          {
+            "node": "Is Low Rating?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Phoenix",
+    "errorWorkflow": "YOUR_ERROR_WORKFLOW_ID",
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}

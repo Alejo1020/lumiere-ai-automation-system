@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lumière · Oficina de IA</title>
+  <meta name="description" content="Oficina pixel art del sistema de automatización de Lumière Aesthetics: cada persona es un agente de IA trabajando. Datos de demostración.">
+  <meta name="robots" content="noindex">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Caslon+Condensed:wght@400&family=VT323&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css?v=20261027073554">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="brand-name">Lumière</span>
+      <span class="brand-sub" data-i18n="brandSub">Oficina de IA</span>
+    </div>
+    <div class="clock" aria-live="off">
+      <span id="clock-day">—</span>
+      <span id="clock-time" class="clock-time">--:--</span>
+      <span id="after-hours" class="after-hours off" data-i18n="afterHours">Fuera de horario · la IA sigue atendiendo</span>
+    </div>
+    <span class="status" id="status"><span class="status-dot" aria-hidden="true"></span><span id="status-text">Simulación</span></span>
+  </header>
+
+  <section class="strip" aria-label="Resumen" data-i18n-aria="summary">
+    <div class="card team">
+      <p class="eyebrow" data-i18n="teamTitle">El equipo</p>
+      <div class="team-row">
+        <span class="team-count" id="team-count">6</span>
+        <div class="avatars" id="team-avatars" role="group" aria-label="Agentes" data-i18n-aria="agents"></div>
+      </div>
+      <p class="team-note" id="team-note">—</p>
+    </div>
+    <div class="card stats">
+      <div class="stat stat-wide">
+        <p class="eyebrow" data-i18n="activityToday">Actividad de hoy</p>
+        <div class="spark-row">
+          <svg class="spark" id="st-spark" viewBox="0 0 96 24" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <span class="stat-num" id="st-events">0</span>
+        </div>
+        <p class="stat-sub" data-i18n="eventsPerHour">eventos por hora</p>
+      </div>
+      <div class="stat"><p class="eyebrow" data-i18n="leadsToday">Leads hoy</p><span class="stat-num" id="st-leads">0</span></div>
+      <div class="stat"><p class="eyebrow" data-i18n="bookingsToday">Citas hoy</p><span class="stat-num" id="st-citas">0</span></div>
+      <div class="stat"><p class="eyebrow" data-i18n="nightToday">Fuera de horario</p><span class="stat-num" id="st-night">0</span><p class="stat-sub" data-i18n="nightSub">hitos atendidos</p></div>
+    </div>
+  </section>
+
+  <main class="stage">
+    <div class="office" id="office">
+      <canvas id="canvas" width="640" height="352" role="img" data-i18n-aria="canvas"
+        aria-label="Oficina pixel art con seis agentes de IA: Valentina en Recepción, Sofía en Atención, Mateo en Seguimiento, Lucía en Agenda, Elena en Post-servicio y Daniel en Fidelización, más la Oficina Lumière, un café y un lounge"></canvas>
+      <div class="room-labels" aria-hidden="true" id="room-labels"></div>
+      <div class="tags" aria-hidden="true" id="tags"></div>
+    </div>
+
+    <aside class="side">
+      <section class="card agent" id="agent" aria-labelledby="ag-name">
+        <p class="eyebrow" data-i18n="agentTitle">Agente</p>
+        <div class="agent-head">
+          <canvas class="agent-avatar" id="ag-avatar" width="16" height="16" aria-hidden="true"></canvas>
+          <div>
+            <h2 class="agent-name" id="ag-name">—</h2>
+            <p class="agent-role" id="ag-role">—</p>
+          </div>
+        </div>
+        <dl class="agent-rows">
+          <div><dt data-i18n="rowState">Estado</dt><dd><span class="state" id="ag-state">—</span></dd></div>
+          <div><dt data-i18n="rowTasks">Tareas hoy</dt><dd id="ag-tasks">0</dd></div>
+          <div><dt data-i18n="rowLast">Último</dt><dd id="ag-last">—</dd></div>
+          <div><dt data-i18n="rowChannel">Canal</dt><dd id="ag-channel">—</dd></div>
+        </dl>
+        <p class="agent-desc" id="ag-desc">—</p>
+      </section>
+
+      <section class="card owner" id="owner" aria-labelledby="owner-title">
+        <h2 id="owner-title" class="owner-title">Lumière Aesthetics</h2>
+        <p class="owner-period" id="owner-period">Octubre · mes a la fecha</p>
+        <dl class="kpis">
+          <div class="kpi kpi-hero"><dt data-i18n="kValor">Valor estimado</dt><dd id="k-valor">$0</dd></div>
+          <div class="kpi"><dt data-i18n="kRoi">ROI del sistema</dt><dd id="k-roi">0.0x</dd></div>
+          <div class="kpi"><dt data-i18n="kHoras">Horas ahorradas</dt><dd id="k-horas">0</dd></div>
+          <div class="kpi"><dt data-i18n="kLeads">Leads atendidos</dt><dd id="k-leads">0</dd></div>
+          <div class="kpi"><dt data-i18n="kCitas">Citas sin recepcionista</dt><dd id="k-citas">0</dd></div>
+          <div class="kpi"><dt data-i18n="kResenas">Reseñas pedidas</dt><dd id="k-resenas">0</dd></div>
+          <div class="kpi"><dt data-i18n="kVuelven">Clientas que vuelven</dt><dd id="k-vuelven">0</dd></div>
+          <div class="kpi kpi-alert"><dt id="k-escal-label">Casos escalados</dt><dd id="k-escal">0</dd></div>
+        </dl>
+      </section>
+    </aside>
+
+    <section class="card log" aria-labelledby="log-title">
+      <div class="log-head">
+        <h2 id="log-title" class="log-title" data-i18n="logTitle">Registro de eventos</h2>
+        <span class="badge" id="data-badge">Datos de demostración</span>
+      </div>
+      <ol class="log-list" id="log" aria-live="off"></ol>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p><span data-i18n="foot">Cada persona de la oficina es un agente de IA (n8n + Claude) del sistema de Lumière Aesthetics. Solo se animan los hitos.</span> <span id="foot-mode">Modo simulación: octubre de demostración, sin gastar mensajes ni IA.</span></p>
+  </footer>
+
+  <nav class="dock" role="toolbar" aria-label="Controles de la oficina" data-i18n-aria="controls">
+    <div class="dock-group">
+      <button type="button" id="play" class="btn icon" aria-label="Pausar"><svg viewBox="0 0 16 16" aria-hidden="true"><path id="play-icon" d="M4 3h3v10H4zM9 3h3v10H9z"/></svg></button>
+      <button type="button" id="speed" class="btn" aria-label="Velocidad" data-i18n-aria="speed">1x</button>
+      <button type="button" id="restart" class="btn icon" aria-label="Reiniciar simulación" data-i18n-aria="restart"><svg viewBox="0 0 16 16" aria-hidden="true"><path class="stroke" d="M13 8.5a5 5 0 1 1-1.8-3.9"/><path d="M14.5 1.5v5h-5z"/></svg></button>
+    </div>
+    <div class="seg" role="group" aria-label="Modo" data-i18n-aria="mode">
+      <button type="button" id="mode-sim" class="seg-btn" aria-pressed="true" data-i18n="sim">Simulación</button>
+      <button type="button" id="mode-live" class="seg-btn" aria-pressed="false" data-i18n="live">En vivo</button>
+    </div>
+    <div class="seg" role="group" aria-label="Luz" data-i18n-aria="light">
+      <button type="button" id="light-auto" class="seg-btn" aria-pressed="true" data-i18n="lightAuto">Auto</button>
+      <button type="button" id="light-day" class="seg-btn" aria-pressed="false" data-i18n="lightDay">Día</button>
+      <button type="button" id="light-night" class="seg-btn" aria-pressed="false" data-i18n="lightNight">Noche</button>
+    </div>
+    <div class="seg" role="group" aria-label="Idioma" data-i18n-aria="language">
+      <button type="button" id="lang-es" class="seg-btn" aria-pressed="true" lang="es">ES</button>
+      <button type="button" id="lang-en" class="seg-btn" aria-pressed="false" lang="en">EN</button>
+    </div>
+  </nav>
+
+  <script src="config.js?v=20261027073554"></script>
+  <script src="data/demo-events.js?v=20261027073554"></script>
+  <script src="i18n.js?v=20261027073554"></script>
+  <script src="sprites.js?v=20261027073554"></script>
+  <script src="map.js?v=20261027073554"></script>
+  <script src="app.js?v=20261027073554"></script>
+</body>
+</html>

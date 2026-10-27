@@ -1,0 +1,521 @@
+{
+  "name": "P33a - Lumière Appointment Reminders",
+  "nodes": [
+    {
+      "id": "n-sched",
+      "name": "Every Minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n-manual",
+      "name": "Manual Test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        400
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "n-read",
+      "name": "Read All Sheets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "parameters": {
+        "method": "GET",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/YOUR_GOOGLE_SHEET_ID/values:batchGet?ranges=Leads&ranges=Citas&ranges=Seguimientos&ranges=Negocio&ranges=Servicios",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "n-pick",
+      "name": "Pick Due Reminders",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Decides which appointment gets a reminder right now. Pure logic: reads the sheets, writes nothing.\n// Decide a qué cita le toca un recordatorio ahora. Solo lee las hojas, no escribe nada.\n// Sent reminders live in Seguimientos (origen = P33, cita_id, ronda = the appointment start it was sent for).\n// Los recordatorios enviados viven en Seguimientos (origen = P33, cita_id, ronda = el inicio de la cita al que apuntaba).\n\n// ⚙️ CONFIG — DEMO_MODE: reminders 15/10/5 min before (live demo). false = 48 h / 24 h / 2 h (production).\n// ⚙️ CONFIG — DEMO_MODE: recordatorios 15/10/5 min antes (demo en vivo). false = 48 h / 24 h / 2 h (producción).\nconst DEMO_MODE = true;\nconst STEPS = [                                   // minutes before the appointment / minutos antes de la cita\n  { paso: '48h', min: DEMO_MODE ? 15 : 48 * 60 },\n  { paso: '24h', min: DEMO_MODE ? 10 : 24 * 60 },\n  { paso: '2h',  min: DEMO_MODE ? 5  : 2 * 60 }\n];\nconst MIN_BEFORE = DEMO_MODE ? 1 : 30;             // too close to the appointment → no reminder / muy cerca → nada\nconst SEND_HOURS = [8, 20];                        // production only / solo producción (hora del spa)\nconst MAX_PER_RUN = 20;\nconst ACTIVE = ['agendada', 'confirmada', 'reprogramada'];\n\n// --- Sheets → rows (same order as the batchGet URL) / Hojas → filas (mismo orden que la URL)\nconst SHEETS = ['Leads', 'Citas', 'Seguimientos', 'Negocio', 'Servicios'];\nconst ranges = $input.first().json.valueRanges || [];\nconst toRows = (vr) => {\n  const v = (vr && vr.values) || [];\n  const h = v[0] || [];\n  return v.slice(1)\n    .map((r, i) => { const o = { row_number: i + 2 }; h.forEach((k, j) => { o[k] = r[j] === undefined ? '' : String(r[j]); }); return o; })\n    .filter(o => h.some(k => o[k] !== ''));\n};\nconst t = {};\nSHEETS.forEach((s, i) => { t[s] = toRows(ranges[i]); });\nconst negocio = {};\nt.Negocio.forEach(r => { if (r.clave) negocio[r.clave] = r.valor; });\n\nconst tz = negocio.zona_horaria || 'America/Phoenix';\nconst now = $now.setZone(tz);\nconst parse = s => {\n  const str = String(s || '').trim();\n  for (const f of ['yyyy-MM-dd HH:mm:ss', 'yyyy-MM-dd HH:mm']) {\n    const d = DateTime.fromFormat(str, f, { zone: tz });\n    if (d.isValid) return d;\n  }\n  return null;\n};\nconst fmt = d => (d ? d.toFormat('yyyy-MM-dd HH:mm:ss') : '');\nconst servicioEn = {};   // nombre_es → nombre_en (for English reminders / para recordatorios en inglés)\nt.Servicios.forEach(r => { if (r.nombre_es) servicioEn[r.nombre_es] = r.nombre_en || r.nombre_es; });\nconst leads = {};\nt.Leads.forEach(l => { leads[l.lead_id] = l; });\n\n// Production: only between 8:00 and 20:00 (spa time). A reminder that falls outside goes out at 8:00.\n// Producción: solo de 8:00 a 20:00 (hora del spa). Uno que cae fuera sale a las 8:00.\nconst inHours = DEMO_MODE || (now.hour >= SEND_HOURS[0] && now.hour < SEND_HOURS[1]);\n\nconst due = [];\nconst report = [];   // why each appointment was / was not picked / por qué se eligió o no cada cita\nfor (const cita of t.Citas) {\n  const why = (motivo, extra = {}) => report.push({ cita_id: cita.cita_id, estado: cita.estado, motivo, ...extra });\n  if (!ACTIVE.includes(cita.estado)) { why('estado_no_aplica'); continue; }\n\n  const inicio = parse(cita.inicio);\n  if (!inicio) { why('inicio_invalido'); continue; }\n  const minsLeft = inicio.diff(now, 'minutes').minutes;\n  if (minsLeft <= MIN_BEFORE) { why('muy_cerca_o_pasada', { inicio: cita.inicio }); continue; }\n\n  const lead = leads[cita.lead_id];\n  if (!lead) { why('lead_no_existe'); continue; }\n  if (lead.estado === 'opt_out') { why('opt_out'); continue; }\n  const whatsapp = cita.whatsapp || lead.whatsapp;\n  if (!whatsapp) { why('sin_whatsapp'); continue; }\n\n  // Confirmed → only the friendly \"see you today\" at 2 h. Not confirmed → ask at every step.\n  // Confirmada → solo el \"te esperamos\" de las 2 h. Sin confirmar → se pide confirmar en cada paso.\n  const steps = cita.estado === 'confirmada' ? STEPS.filter(s => s.paso === '2h') : STEPS;\n\n  // The latest step whose time already came. Earlier steps that were missed are skipped (no bursts).\n  // El último paso cuya hora ya llegó. Los anteriores que no salieron se saltan (nada de ráfagas).\n  const ronda = cita.inicio;                                   // a rescheduled appointment starts a new round\n  const anchor = parse(cita.ultima_actualizacion) || parse(cita.fecha_creacion);\n  const fired = steps.filter(s => inicio.minus({ minutes: s.min }) <= now);\n  if (!fired.length) {\n    const next = steps[0];\n    why('aun_no', { siguiente: next.paso, cuando: fmt(inicio.minus({ minutes: next.min })) });\n    continue;\n  }\n  const step = fired[fired.length - 1];\n  const fireAt = inicio.minus({ minutes: step.min });\n\n  // Booked / rescheduled / confirmed after this step's time → she was just in touch, skip this step.\n  // Agendó / reprogramó / confirmó después de la hora de este paso → acaba de hablar, se salta el paso.\n  if (anchor && anchor > fireAt) { why('reciente', { paso: step.paso, cambio: fmt(anchor) }); continue; }\n\n  const sent = t.Seguimientos.filter(s => s.origen === 'P33' && s.cita_id === cita.cita_id && s.ronda === ronda);\n  const sentIdx = Math.max(-1, ...sent.map(s => STEPS.findIndex(x => x.paso === s.paso)));\n  if (sentIdx >= STEPS.findIndex(x => x.paso === step.paso)) { why('ya_enviado', { paso: step.paso }); continue; }\n  if (!inHours) { why('fuera_de_horario', { paso: step.paso }); continue; }\n\n  const plantilla = cita.estado === 'confirmada' ? 'te_esperamos' : (step.paso === '2h' ? 'ultimo_aviso' : 'confirmar');\n  due.push({\n    cita_id: cita.cita_id, lead_id: cita.lead_id, nombre: cita.nombre || lead.nombre, whatsapp,\n    idioma: lead.idioma || 'es', servicio: cita.servicio, servicio_en: servicioEn[cita.servicio] || cita.servicio, inicio: cita.inicio, fin: cita.fin,\n    estado_cita: cita.estado, paso: step.paso, ronda, plantilla\n  });\n  why('toca', { paso: step.paso, plantilla });\n}\n\nconst picked = due.slice(0, MAX_PER_RUN);\nreturn picked.length\n  ? picked.map(d => ({ json: { ...d, demo_mode: DEMO_MODE, ahora: fmt(now), negocio } }))\n  : [{ json: { nada: true, ahora: fmt(now), demo_mode: DEMO_MODE, report } }];\n"
+      }
+    },
+    {
+      "id": "n-if",
+      "name": "Any Reminder Due?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        900,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.cita_id ? true : false }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "s-trig",
+      "name": "Note Triggers",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        0
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 180,
+        "color": 5,
+        "content": "## ⏰ TRIGGERS / DISPARADORES\n**EN:** Checks every minute for appointments that need a reminder; Manual Test runs it by hand.\n**ES:** Revisa cada minuto qué citas necesitan recordatorio; Manual Test lo corre a mano."
+      }
+    },
+    {
+      "id": "s-read",
+      "name": "Note Read",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        80
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 180,
+        "color": 4,
+        "content": "## 📥 READ SHEETS / LEER HOJAS\n**EN:** One batchGet call: Leads, Citas, Seguimientos, Negocio and Servicios.\n**ES:** Una sola llamada batchGet: Leads, Citas, Seguimientos, Negocio y Servicios."
+      }
+    },
+    {
+      "id": "s-pick",
+      "name": "Note Pick",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        540,
+        80
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 180,
+        "color": 6,
+        "content": "## 🧠 PICK REMINDERS / ELEGIR RECORDATORIOS\n**EN:** 48 h / 24 h / 2 h cascade (DEMO_MODE 15/10/5 min); only the latest due step, never a burst.\n**ES:** Cascada 48 h / 24 h / 2 h (DEMO_MODE 15/10/5 min); solo el último paso que toca, nunca ráfagas."
+      }
+    },
+    {
+      "id": "s-if",
+      "name": "Note Due",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        840,
+        80
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 180,
+        "color": 7,
+        "content": "## 🔀 ANY DUE? / ¿TOCA ALGUNO?\n**EN:** True → build and send the reminders. False → nothing to do this minute.\n**ES:** Verdadero → arma y envía los recordatorios. Falso → nada que hacer este minuto."
+      }
+    },
+    {
+      "id": "n-build",
+      "name": "Build Reminder",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// Fills the fixed reminder template (Meta \"utility\" style: fixed text + variables). No AI: $0 per message.\n// Llena la plantilla fija del recordatorio (estilo \"utility\" de Meta: texto fijo + variables). Sin IA: $0 por mensaje.\n// Templates / Plantillas: confirmar (48 h, 24 h) · ultimo_aviso (2 h, not confirmed) · te_esperamos (2 h, confirmed)\n// \"Consulta + …\" → \"consulta + …\" mid-sentence (keeps acronyms like \"HydraFacial\" only if 2nd letter is upper)\nconst lower = s => (s && s[1] && s[1] === s[1].toLowerCase() ? s[0].toLowerCase() + s.slice(1) : s);\nconst T = {\n  es: {\n    confirmar: v => `Hola ${v.nombre} 👋 Soy ${v.asistente}, de ${v.spa}. Te recuerdo tu cita:\\n\\n🗓 ${v.dia}\\n🕐 ${v.hora}\\n💆 ${v.servicio}\\n\\n¿Nos confirmas? Responde *SÍ* para confirmar. Si necesitas cambiar la hora o cancelar, dímelo por aquí y lo hacemos en un momento.\\n\\nResponde STOP si no quieres recibir más mensajes.`,\n    ultimo_aviso: v => `Hola ${v.nombre}, tu cita en ${v.spa} es ${v.dia} a las ${v.hora} (${v.servicio}). ¿Confirmas que vienes? Responde *SÍ* o dime si necesitas cambiarla.\\n\\n📍 ${v.direccion}`,\n    te_esperamos: v => `Hola ${v.nombre} 💛 Te esperamos ${v.dia} a las ${v.hora} para tu ${lower(v.servicio)}.\\n\\n📍 ${v.direccion}${v.parqueadero ? '\\n🚗 ' + v.parqueadero : ''}\\n\\nSi te surge algo, escríbeme por aquí.`\n  },\n  en: {\n    confirmar: v => `Hi ${v.nombre} 👋 This is ${v.asistente} from ${v.spa}. A quick reminder of your appointment:\\n\\n🗓 ${v.dia}\\n🕐 ${v.hora}\\n💆 ${v.servicio}\\n\\nCan you confirm? Reply *YES* to confirm. If you need to change the time or cancel, just tell me here and I'll take care of it.\\n\\nReply STOP to opt out.`,\n    ultimo_aviso: v => `Hi ${v.nombre}, your appointment at ${v.spa} is ${v.dia} at ${v.hora} (${v.servicio}). Are you still coming? Reply *YES* or tell me if you need to change it.\\n\\n📍 ${v.direccion}`,\n    te_esperamos: v => `Hi ${v.nombre} 💛 We'll see you ${v.dia} at ${v.hora} for your ${lower(v.servicio)}.\\n\\n📍 ${v.direccion}${v.parqueadero ? '\\n🚗 ' + v.parqueadero : ''}\\n\\nIf anything comes up, just message me here.`\n  }\n};\n\nreturn $input.all().map(item => {\n  const r = item.json;\n  const n = r.negocio || {};\n  const lang = String(r.idioma).toLowerCase().startsWith('en') ? 'en' : 'es';\n  const tz = n.zona_horaria || 'America/Phoenix';\n  const inicio = DateTime.fromFormat(String(r.inicio).slice(0, 16), 'yyyy-MM-dd HH:mm', { zone: tz }).setLocale(lang);\n  const today = $now.setZone(tz).startOf('day');\n  const days = Math.round(inicio.startOf('day').diff(today, 'days').days);\n\n  // \"today\" / \"tomorrow\" / weekday + date — in the client's language / en el idioma de la clienta\n  const fecha = lang === 'es' ? inicio.toFormat(\"cccc d 'de' LLLL\") : inicio.toFormat('cccc, LLLL d');\n  const dia = days === 0 ? (lang === 'es' ? 'hoy' : 'today')\n            : days === 1 ? (lang === 'es' ? 'mañana, ' + fecha : 'tomorrow, ' + fecha)\n            : fecha;\n  const hora = lang === 'es'\n    ? inicio.toFormat('h:mm') + (inicio.hour < 12 ? ' a. m.' : ' p. m.')\n    : inicio.toFormat('h:mm a');\n\n  const v = {\n    nombre: String(r.nombre || '').trim().split(/\\s+/)[0] || (lang === 'es' ? 'hola' : 'there'),\n    asistente: n.nombre_asistente || 'Sofía', spa: n.nombre || 'Lumière Aesthetics',\n    dia, hora, servicio: lang === 'en' ? (r.servicio_en || r.servicio) : r.servicio, direccion: n.direccion || '', parqueadero: n.parqueadero || ''\n  };\n  const mensaje = T[lang][r.plantilla](v);\n\n  // Input for P31e - Lumière Send WhatsApp (+ the reminder data for the log) / Entrada para P31e (+ datos para el log)\n  return { json: {\n    lead_id: r.lead_id, whatsapp: r.whatsapp, mensaje, origen: 'P33', rol: 'assistant', off_topic: false, solo_registrar: false,\n    cita_id: r.cita_id, paso: r.paso, ronda: r.ronda, plantilla: r.plantilla, idioma: lang\n  } };\n});\n"
+      }
+    },
+    {
+      "id": "n-send",
+      "name": "Send Reminder WhatsApp",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1500,
+        200
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "YOUR_P31E_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "mode": "each",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "n-row",
+      "name": "Build Seguimiento Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// One row for Seguimientos per reminder, sent or failed. / Una fila en Seguimientos por recordatorio, enviado o fallido.\n// Columns / Columnas: seguimiento_id, fecha, lead_id, origen, secuencia, ronda, paso, canal, mensaje, message_id, resultado, cita_id\nconst reminders = $('Build Reminder').all();\nconst rand = () => Math.random().toString(36).slice(2, 7).toUpperCase();\nreturn $input.all().map((item, i) => {\n  const t = reminders[i].json;\n  const r = item.json || {};\n  const fecha = r.fecha || $now.setZone('America/Phoenix').toFormat('yyyy-MM-dd HH:mm:ss');\n  const resultado = (r.ok === false || r.estado_entrega === 'error') ? 'error: ' + (r.error || 'send_failed') : (r.estado_entrega || 'queued');\n  return { json: {\n    row: ['SEG-' + fecha.slice(0, 10).replace(/-/g, '') + '-' + rand(), fecha, t.lead_id, 'P33', 'recordatorio_cita', t.ronda, t.paso,\n          'whatsapp', t.mensaje, r.wa_message_sid || '', resultado, t.cita_id],\n    cita_id: t.cita_id, paso: t.paso, plantilla: t.plantilla, resultado\n  } };\n});\n"
+      }
+    },
+    {
+      "id": "n-log",
+      "name": "Log to Seguimientos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2100,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/YOUR_GOOGLE_SHEET_ID/values/Seguimientos!A1:L1:append",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "valueInputOption",
+              "value": "RAW"
+            },
+            {
+              "name": "insertDataOption",
+              "value": "INSERT_ROWS"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [ $json.row ] }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "s-build",
+      "name": "Note Build",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1140,
+        -20
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 6,
+        "content": "## 📝 BUILD REMINDER / ARMAR RECORDATORIO\n**EN:** Fixed Meta-style template (confirmar / ultimo_aviso / te_esperamos), ES/EN, no AI: $0 per message.\n**ES:** Plantilla fija estilo Meta (confirmar / ultimo_aviso / te_esperamos), ES/EN, sin IA: $0 por mensaje."
+      }
+    },
+    {
+      "id": "s-send",
+      "name": "Note Send",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        -20
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 5,
+        "content": "## 📤 SEND / ENVIAR\n**EN:** Shared piece P31e sends via Twilio and logs it in Conversaciones (origen P33), so Sofía sees it.\n**ES:** La pieza compartida P31e envía por Twilio y lo registra en Conversaciones (origen P33): Sofía lo ve."
+      }
+    },
+    {
+      "id": "s-log",
+      "name": "Note Log",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1740,
+        -20
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 4,
+        "content": "## 🧾 LOG / REGISTRAR\n**EN:** One row per reminder in Seguimientos (cita_id, ronda = start time, paso) so it is never sent twice.\n**ES:** Una fila por recordatorio en Seguimientos (cita_id, ronda = hora de inicio, paso) para no repetirlo nunca."
+      }
+    },
+    {
+      "id": "x-evt-touch",
+      "name": "Emit Touch Event",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2100,
+        420
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "YOUR_P36A_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo": "={{ String($json.row[10]).startsWith('error') ? '' : 'toque_enviado' }}",
+            "proyecto": "={{ $json.row[3] }}",
+            "lead_id": "={{ $json.row[2] }}",
+            "ref_id": "={{ $json.row[11] || $json.row[0] }}",
+            "detalle": "={{ $json.row[4] + ' · ' + $json.row[6] + ' · ' + $json.row[7] }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tipo",
+              "displayName": "tipo",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "proyecto",
+              "displayName": "proyecto",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ref_id",
+              "displayName": "ref_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "detalle",
+              "displayName": "detalle",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "x-evt-note",
+      "name": "Note - Emit Touch Event",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2040,
+        580
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🏢 EMIT TOUCH EVENT / EVENTO DE TOQUE\n\ntoque_enviado → P36a (Eventos), one per message; failed sends are skipped. Fire and forget.\ntoque_enviado → P36a (Eventos), uno por mensaje; los fallidos no cuentan. Dispara y sigue."
+      }
+    }
+  ],
+  "connections": {
+    "Every Minute": {
+      "main": [
+        [
+          {
+            "node": "Read All Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Test": {
+      "main": [
+        [
+          {
+            "node": "Read All Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read All Sheets": {
+      "main": [
+        [
+          {
+            "node": "Pick Due Reminders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Due Reminders": {
+      "main": [
+        [
+          {
+            "node": "Any Reminder Due?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Reminder": {
+      "main": [
+        [
+          {
+            "node": "Send Reminder WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reminder WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Build Seguimiento Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Seguimiento Row": {
+      "main": [
+        [
+          {
+            "node": "Log to Seguimientos",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Emit Touch Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Reminder Due?": {
+      "main": [
+        [
+          {
+            "node": "Build Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Phoenix",
+    "saveManualExecutions": true,
+    "errorWorkflow": "YOUR_ERROR_WORKFLOW_ID"
+  }
+}

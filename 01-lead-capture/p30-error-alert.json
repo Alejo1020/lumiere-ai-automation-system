@@ -1,0 +1,294 @@
+{
+  "name": "P30 - Lumière Error Alert",
+  "nodes": [
+    {
+      "id": "e-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "e-mail",
+      "name": "Send Error Alert",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        260,
+        300
+      ],
+      "webhookId": "9d2f4b1e-7a3c-4e8b-a1d5-6c0e2f9b3a71",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      },
+      "parameters": {
+        "sendTo": "YOUR_EMAIL",
+        "subject": "=🚨 Lumière: un lead puede no haberse guardado ({{ $json.workflow.name }})",
+        "emailType": "text",
+        "message": "=Falló un workflow de Lumière después de responderle \"gracias\" a la persona. El lead puede NO estar en el Sheet.\n\nWorkflow: {{ $json.workflow.name }}\nNodo que falló: {{ $json.execution.lastNodeExecuted }}\nError: {{ $json.execution.error.message }}\nHora (Arizona): {{ $now.setZone('America/Phoenix').toFormat('yyyy-MM-dd HH:mm:ss') }}\n\nLos datos del lead están en la ejecución {{ $json.execution.id }}:\nhttp://localhost:5678/workflow/{{ $json.workflow.id }}/executions/{{ $json.execution.id }}\n\nQué hacer: abre la ejecución, copia los datos de \"Validate Lead\" y agrégalos al Sheet a mano (o reintenta la ejecución).",
+        "options": {
+          "appendAttribution": false
+        }
+      }
+    },
+    {
+      "id": "e-sticky",
+      "name": "Sticky Error Alert",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -20
+      ],
+      "parameters": {
+        "width": 560,
+        "height": 480,
+        "color": 3,
+        "content": "## Error alert / Alerta de error\n**EN:** Set as the Error Workflow of `P30 - Lumière Lead Capture (Form + SMS) 2`. The landing gets its 200 before the lead is saved, so if Google Sheets fails the visitor never sees it. This email makes sure no lead is lost silently: it includes the failed node, the error and a link to the execution with the lead data.\n\n**ES:** Es el Error Workflow de `P30 - Lumière Lead Capture (Form + SMS) 2`. La landing recibe el 200 antes de guardar el lead, así que si Google Sheets falla la persona no se entera. Este correo evita que un lead se pierda en silencio: trae el nodo que falló, el error y el link a la ejecución con los datos del lead."
+      }
+    },
+    {
+      "id": "e-evt",
+      "name": "Emit Error Event",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        260,
+        520
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "YOUR_P36A_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo": "error",
+            "proyecto": "={{ (String($json.workflow.name || '').match(/^P3[0-6]/) || ['P36'])[0] }}",
+            "lead_id": "",
+            "ref_id": "={{ $json.execution.id }}",
+            "detalle": "={{ $json.workflow.name }} · {{ $json.execution.lastNodeExecuted }} · {{ String(($json.execution.error || {}).message || '').slice(0, 100) }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tipo",
+              "displayName": "tipo",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "proyecto",
+              "displayName": "proyecto",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ref_id",
+              "displayName": "ref_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "detalle",
+              "displayName": "detalle",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "e-evt-note",
+      "name": "Note - Emit Error Event",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        540,
+        460
+      ],
+      "parameters": {
+        "width": 300,
+        "height": 200,
+        "color": 7,
+        "content": "🏢 EMIT ERROR EVENT / EVENTO DE ERROR\n\nerror → P36a (Eventos), project taken from the workflow name. Fire and forget.\nerror → P36a (Eventos), el proyecto sale del nombre del workflow. Dispara y sigue."
+      }
+    },
+    {
+      "id": "e-read",
+      "name": "Read Owner Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        260,
+        760
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/YOUR_GOOGLE_SHEET_ID/values:batchGet?ranges=Negocio!A:B&ranges=Eventos!A:G",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "e-build",
+      "name": "Build Owner Error Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        760
+      ],
+      "parameters": {
+        "jsCode": "// Short WhatsApp for the owner when a Lumière flow fails. Plain words, no tech details (those go to the email).\n// WhatsApp corto para la dueña cuando falla un flujo de Lumière. Palabras simples, sin detalle técnico (eso va en el correo).\n// At most one per workflow every 30 min / Máximo uno por flujo cada 30 min (a failing schedule must not flood her phone).\nconst THROTTLE_MIN = 30;\nconst e = $('Error Trigger').first().json;\nconst res = $input.first().json || {};\nif (res.error || !res.valueRanges) return [];          // Sheet unreadable -> only the email goes out\nconst rows = r => (r && r.values) || [];\nconst negocio = Object.fromEntries(rows(res.valueRanges[0]).slice(1).map(r => [r[0], r[1]]));\nconst duena = '+' + String(negocio.whatsapp_duena || negocio.whatsapp_equipo || '').replace(/\\D/g, '');\nif (duena.length < 12) return [];\nconst tz = negocio.zona_horaria || 'America/Phoenix';\nconst now = $now.setZone(tz);\nconst wfName = String((e.workflow || {}).name || '');\nconst execId = String((e.execution || {}).id || '');\nconst since = now.minus({ minutes: THROTTLE_MIN }).toFormat('yyyy-MM-dd HH:mm:ss');\n// Eventos: evento_id, fecha, tipo, proyecto, lead_id, ref_id, detalle\nconst recent = rows(res.valueRanges[1]).slice(1).some(r => r[2] === 'error' && String(r[1]) >= since\n  && String(r[6] || '').startsWith(wfName + ' ·') && String(r[5]) !== execId);\nif (recent) return [];\nconst code = (wfName.match(/^P3[0-6]/) || ['P36'])[0];\nconst PROC = {\n  es: { P30: 'la captura de leads de la web', P31: 'la atención por WhatsApp', P32: 'el seguimiento a leads', P33: 'los recordatorios de citas',\n        P34: 'los mensajes después de la cita', P35: 'los mensajes de retoque y reactivación', P36: 'los reportes del sistema' },\n  en: { P30: 'website lead capture', P31: 'WhatsApp client care', P32: 'lead follow-up', P33: 'appointment reminders',\n        P34: 'post-visit messages', P35: 'touch-up and reactivation messages', P36: 'system reports' }\n};\nconst lang = String(negocio.idioma_duena || 'en').startsWith('es') ? 'es' : 'en';\nconst hora = now.toFormat('HH:mm');\nconst mensaje = lang === 'es'\n  ? `⚠️ Lumière: hubo una falla en ${PROC.es[code]} a las ${hora}. Tu soporte técnico ya recibió el detalle y lo está revisando. Si una clienta te escribe por algo de esto, atiéndela tú mientras tanto.`\n  : `⚠️ Lumière: something failed in ${PROC.en[code]} at ${hora}. Your tech support already has the details and is on it. If a client contacts you about it, please handle her directly in the meantime.`;\n// Inputs of P31e - Lumière Send WhatsApp (no client: logged with an empty lead_id)\nreturn [{ json: { lead_id: '', whatsapp: duena, mensaje, rol: 'alerta_duena', origen: 'P36' } }];"
+      }
+    },
+    {
+      "id": "e-send",
+      "name": "Send Owner Error Alert",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        780,
+        760
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "YOUR_P31E_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "e-own-note",
+      "name": "Note - Owner Error Alert",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        200,
+        920
+      ],
+      "parameters": {
+        "width": 780,
+        "height": 200,
+        "color": 7,
+        "content": "👩‍💼 OWNER ERROR ALERT / ALERTA DE ERROR A LA DUEÑA\n\nReads Negocio + Eventos → short plain-words WhatsApp to Negocio.whatsapp_duena via P31e (language = idioma_duena). Max one per workflow every 30 min. If the Sheet cannot be read, only the email goes out.\nLee Negocio + Eventos → WhatsApp corto y sin tecnicismos a Negocio.whatsapp_duena por P31e (idioma = idioma_duena). Máximo uno por flujo cada 30 min. Si no se puede leer el Sheet, solo sale el correo."
+      }
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Send Error Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Emit Error Event",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Owner Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Owner Data": {
+      "main": [
+        [
+          {
+            "node": "Build Owner Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Owner Error Alert": {
+      "main": [
+        [
+          {
+            "node": "Send Owner Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Phoenix"
+  }
+}

@@ -1,0 +1,8 @@
+# Cloudflare Pages — cabeceras HTTP de la oficina pixel art
+# noindex: es una pieza de demostración (datos ficticios), no debe salir en Google.
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  X-Robots-Tag: noindex

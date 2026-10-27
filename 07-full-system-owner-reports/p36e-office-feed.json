@@ -1,0 +1,383 @@
+{
+  "name": "P36e - Lumière Office Feed",
+  "nodes": [
+    {
+      "id": "f-hook",
+      "name": "Office Feed",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "5e0f1c2a-36e0-4d1b-9a7c-0ff1ce0fee36",
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "lumiere-office-feed",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "https://lumiere-office.pages.dev,http://localhost:8788"
+        }
+      }
+    },
+    {
+      "id": "f-check",
+      "name": "Check Cache",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        250,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Owner-room numbers are recomputed at most every 5 minutes (P36d reads 9 sheets); events are read on every call.\n// Los números de la oficina de la dueña se recalculan máximo cada 5 minutos (P36d lee 9 hojas); los eventos, en cada llamada.\nconst CACHE_MIN = 5;\nconst sd = $getWorkflowStaticData('global');\nconst fresh = sd.kpis && Date.now() - (sd.at || 0) < CACHE_MIN * 60 * 1000;\nconst tz = 'America/Phoenix';\nconst today = $now.setZone(tz);\nreturn [{ json: { refresh: !fresh, desde: today.minus({ days: 29 }).toFormat('yyyy-MM-dd'), hasta: today.toFormat('yyyy-MM-dd') } }];\n"
+      }
+    },
+    {
+      "id": "f-if",
+      "name": "Refresh Numbers?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        500,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.refresh }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "f-met",
+      "name": "Get Metrics",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        750,
+        160
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "YOUR_P36D_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sheet": "real",
+            "desde": "={{ $json.desde }}",
+            "hasta": "={{ $json.hasta }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "sheet",
+              "displayName": "sheet",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "desde",
+              "displayName": "desde",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "hasta",
+              "displayName": "hasta",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "f-save",
+      "name": "Save Numbers",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        160
+      ],
+      "parameters": {
+        "jsCode": "// Keeps only what the office shows (no client data) / Guarda solo lo que muestra la oficina (sin datos de clientas)\nconst m = $input.first().json;\nconst P = m.periodo || {};\nconst sd = $getWorkflowStaticData('global');\nsd.kpis = {\n  dias: P.dias, leads: P.leads, respuesta_prom_seg: P.respuesta_prom_seg, citas_agendadas: P.citas_agendadas,\n  no_shows_evitados: P.no_shows_evitados, clientas_que_vuelven: P.clientas_que_vuelven, citas_recuperadas: (P.citas_de_nurturing || 0) + (P.clientas_que_vuelven || 0),\n  resenas_pedidas: P.resenas_pedidas, horas_ahorradas: P.horas_ahorradas, total_usd: P.total_usd, costo_sistema_usd: P.costo_sistema_usd, roi_x: P.roi_x,\n  casos_abiertos: m.casos_abiertos\n};\nsd.at = Date.now();\nreturn [{ json: { cached: true } }];\n"
+      }
+    },
+    {
+      "id": "f-read",
+      "name": "Read Eventos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1250,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "parameters": {
+        "method": "GET",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/YOUR_GOOGLE_SHEET_ID/values/Eventos!A:G",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {}
+      }
+    },
+    {
+      "id": "f-build",
+      "name": "Build Feed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Feed for the pixel-art office (live mode): last events + owner-room numbers. Read only, first names only.\n// Feed de la oficina pixel art (modo en vivo): últimos eventos + números de la dueña. Solo lectura y solo nombres de pila.\n// Query: ?since=<evento_id> → only newer events (the page polls every few seconds).\nconst MAX = 40;\nconst q = $('Office Feed').first().json.query || {};\nconst since = String(q.since || '');\nconst sd = $getWorkflowStaticData('global');\nconst rows = (($input.first().json.values) || []).slice(1).filter(r => r[0]);\nlet ev = rows.map(r => ({ id: r[0], fecha: r[1], tipo: r[2], proyecto: r[3], ref: String(r[5] || '').slice(0, 3), detalle: String(r[6] || '') }));\nif (since) { const i = ev.findIndex(e => e.id === since); ev = i >= 0 ? ev.slice(i + 1) : ev; }\nev = ev.slice(-MAX).map(e => ({ ...e, detalle: e.tipo === 'error' ? 'Falla en ' + e.proyecto + ' · el monitor ya avisó' : e.detalle }));   // no technical details on screen\nreturn [{ json: { ok: true, modo: 'en_vivo', ahora: $now.setZone('America/Phoenix').toFormat('yyyy-MM-dd HH:mm:ss'),\n  kpis: sd.kpis || null, kpis_at: sd.at || null, eventos: ev, ultimo: rows.length ? rows[rows.length - 1][0] : '' } }];\n"
+      }
+    },
+    {
+      "id": "f-resp",
+      "name": "Respond Feed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1750,
+        300
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "f-main",
+      "name": "Sticky Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -160
+      ],
+      "parameters": {
+        "width": 1960,
+        "height": 220,
+        "color": 5,
+        "content": "## P36e - Office Feed / Feed de la oficina\n**EN:** Read-only GET webhook for the pixel-art office in live mode (Alejo's sales demo): the latest milestones from the Eventos sheet and the owner-room numbers (last 30 days, from P36d, cached 5 min). First names only, no technical details. ?since=<evento_id> returns only newer events. CORS: the office page and localhost.\n\n**ES:** Webhook GET de solo lectura para la oficina pixel art en modo en vivo (demo de ventas de Alejo): los últimos hitos de la hoja Eventos y los números de la oficina de la dueña (últimos 30 días, de P36d, en caché 5 min). Solo nombres de pila, sin detalles técnicos. ?since=<evento_id> devuelve solo los eventos nuevos. CORS: la página de la oficina y localhost."
+      }
+    },
+    {
+      "id": "f-n0",
+      "name": "Note - Office Feed",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        500
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🌐 OFFICE FEED (GET)\n\n/webhook/lumiere-office-feed?since=EVT-… · CORS only for the office page.\nCORS solo para la página de la oficina."
+      }
+    },
+    {
+      "id": "f-n1",
+      "name": "Note - Cache",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        500
+      ],
+      "parameters": {
+        "width": 520,
+        "height": 200,
+        "color": 7,
+        "content": "🗄️ CACHE / CACHÉ\n\nNumbers live in the workflow static data; recomputed with P36d at most every 5 min.\nLos números viven en el static data del workflow; se recalculan con P36d máximo cada 5 min."
+      }
+    },
+    {
+      "id": "f-n2",
+      "name": "Note - Read Eventos",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1190,
+        500
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "📚 READ EVENTOS / LEER EVENTOS\n\nThe Eventos sheet written by P36a.\nLa hoja Eventos que escribe P36a."
+      }
+    },
+    {
+      "id": "f-n3",
+      "name": "Note - Build Feed",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        500
+      ],
+      "parameters": {
+        "width": 520,
+        "height": 200,
+        "color": 7,
+        "content": "📦 BUILD + RESPOND / ARMAR Y RESPONDER\n\nLast 40 events (or newer than since) + numbers; errors shown without technical details.\nÚltimos 40 eventos (o los nuevos) + números; los errores sin detalle técnico."
+      }
+    }
+  ],
+  "connections": {
+    "Office Feed": {
+      "main": [
+        [
+          {
+            "node": "Check Cache",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Cache": {
+      "main": [
+        [
+          {
+            "node": "Refresh Numbers?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refresh Numbers?": {
+      "main": [
+        [
+          {
+            "node": "Get Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Read Eventos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Metrics": {
+      "main": [
+        [
+          {
+            "node": "Save Numbers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Numbers": {
+      "main": [
+        [
+          {
+            "node": "Read Eventos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Eventos": {
+      "main": [
+        [
+          {
+            "node": "Build Feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Feed": {
+      "main": [
+        [
+          {
+            "node": "Respond Feed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Phoenix",
+    "errorWorkflow": "YOUR_ERROR_WORKFLOW_ID",
+    "saveDataSuccessExecution": "none"
+  }
+}

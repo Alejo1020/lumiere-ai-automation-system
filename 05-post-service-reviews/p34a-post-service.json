@@ -1,0 +1,657 @@
+{
+  "name": "P34a - Lumière Post-Service",
+  "nodes": [
+    {
+      "id": "n-sched",
+      "name": "Every Minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n-manual",
+      "name": "Manual Test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        400
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "n-read",
+      "name": "Read All Sheets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "parameters": {
+        "method": "GET",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/YOUR_GOOGLE_SHEET_ID/values:batchGet?ranges=Leads&ranges=Citas&ranges=Seguimientos&ranges=Calificaciones&ranges=Conversaciones&ranges=Escalamientos&ranges=Negocio&ranges=Servicios",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "n-pick",
+      "name": "Pick Due Messages",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Decides which client gets a post-service message right now. Pure logic: reads the sheets, writes nothing.\n// Decide a qué clienta le toca un mensaje post-servicio ahora. Solo lee las hojas, no escribe nada.\n//   asistio    → gracias (thank you + rating 1-5) → recordatorio_nota once if she stays silent\n//   no_asistio → te_extranamos (we missed you, want to rebook?) once\n//   WhatsApp failed (send error or Twilio status callback) → same message once by email, if she has one\n//   WhatsApp fallido (error al enviar o status callback) → el mismo mensaje una vez por email, si tiene\n// Sent messages live in Seguimientos (origen = P34, cita_id, paso). Ratings live in Calificaciones.\n// Los mensajes enviados viven en Seguimientos (origen = P34, cita_id, paso). Las notas, en Calificaciones.\n\n// ⚙️ CONFIG — DEMO_MODE: minutes instead of hours (live demo). false = production times.\n// ⚙️ CONFIG — DEMO_MODE: minutos en vez de horas (demo en vivo). false = tiempos de producción.\nconst DEMO_MODE = true;\nconst AFTER_END_MIN = DEMO_MODE ? 2 : 2 * 60;        // thank-you / no-show message after the appointment ends\nconst REMINDER_MIN  = DEMO_MODE ? 5 : 24 * 60;       // rating reminder after the thank-you if she stays silent\nconst MAX_AGE_MIN   = DEMO_MODE ? 24 * 60 : 3 * 24 * 60; // older appointments are ignored (e.g. marked weeks later)\nconst SEND_HOURS = [9, 20];                          // production only / solo producción (hora del spa)\nconst MAX_PER_RUN = 20;\nconst ACTIVE = ['agendada', 'confirmada', 'reprogramada'];\nconst FAILED = ['failed', 'undelivered', 'error'];\n\n// --- Sheets → rows (same order as the batchGet URL) / Hojas → filas (mismo orden que la URL)\nconst SHEETS = ['Leads', 'Citas', 'Seguimientos', 'Calificaciones', 'Conversaciones', 'Escalamientos', 'Negocio', 'Servicios'];\nconst ranges = $input.first().json.valueRanges || [];\nconst toRows = (vr) => {\n  const v = (vr && vr.values) || [];\n  const h = v[0] || [];\n  return v.slice(1)\n    .map((r, i) => { const o = { row_number: i + 2 }; h.forEach((k, j) => { o[k] = r[j] === undefined ? '' : String(r[j]); }); return o; })\n    .filter(o => h.some(k => o[k] !== ''));\n};\nconst t = {};\nSHEETS.forEach((s, i) => { t[s] = toRows(ranges[i]); });\nconst negocio = {};\nt.Negocio.forEach(r => { if (r.clave) negocio[r.clave] = r.valor; });\n\nconst tz = negocio.zona_horaria || 'America/Phoenix';\nconst now = $now.setZone(tz);\nconst parse = s => {\n  const str = String(s || '').trim();\n  for (const f of ['yyyy-MM-dd HH:mm:ss', 'yyyy-MM-dd HH:mm']) {\n    const d = DateTime.fromFormat(str, f, { zone: tz });\n    if (d.isValid) return d;\n  }\n  return null;\n};\nconst fmt = d => (d ? d.toFormat('yyyy-MM-dd HH:mm:ss') : '');\nconst servicioEn = {};\nt.Servicios.forEach(r => { if (r.nombre_es) servicioEn[r.nombre_es] = r.nombre_en || r.nombre_es; });\nconst leads = {};\nt.Leads.forEach(l => { leads[l.lead_id] = l; });\n\nconst inHours = DEMO_MODE || (now.hour >= SEND_HOURS[0] && now.hour < SEND_HOURS[1]);\n\nconst due = [];\nconst report = [];   // why each appointment was / was not picked / por qué se eligió o no cada cita\nfor (const cita of t.Citas) {\n  const why = (motivo, extra = {}) => report.push({ cita_id: cita.cita_id, estado: cita.estado, motivo, ...extra });\n  if (!['asistio', 'no_asistio'].includes(cita.estado)) { why('estado_no_aplica'); continue; }\n\n  const fin = parse(cita.fin) || parse(cita.inicio);\n  if (!fin) { why('fin_invalido'); continue; }\n  const minsSinceEnd = now.diff(fin, 'minutes').minutes;\n  if (minsSinceEnd < AFTER_END_MIN) { why('aun_no', { cuando: fmt(fin.plus({ minutes: AFTER_END_MIN })) }); continue; }\n\n  const lead = leads[cita.lead_id];\n  if (!lead) { why('lead_no_existe'); continue; }\n  if (lead.estado === 'opt_out') { why('opt_out'); continue; }\n  const whatsapp = cita.whatsapp || lead.whatsapp;\n  if (!whatsapp) { why('sin_whatsapp'); continue; }\n  // An open case means a person is handling her: the system stays quiet. / Caso abierto = la atiende una persona: silencio.\n  if (t.Escalamientos.some(e => e.lead_id === cita.lead_id && e.estado === 'abierto')) { why('escalamiento_abierto'); continue; }\n\n  const sent = t.Seguimientos.filter(s => s.origen === 'P34' && s.cita_id === cita.cita_id);\n  const sentWa = p => sent.find(s => s.paso === p && s.canal !== 'email');\n  const sentEmail = p => sent.find(s => s.paso === p && s.canal === 'email');\n  const failed = s => {\n    const conv = s.message_id ? t.Conversaciones.find(m => m.wa_message_sid === s.message_id) : null;\n    const estado = String((conv && conv.estado_entrega) || s.resultado || '').toLowerCase();\n    return FAILED.some(f => estado.startsWith(f));\n  };\n  const hasEmail = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(String(lead.email || '').trim());\n  // pendiente | enviado_wa | enviado_email | toca_email | fallido_sin_email\n  const stepState = p => {\n    const wa = sentWa(p);\n    if (!wa) return 'pendiente';\n    if (!failed(wa)) return 'enviado_wa';\n    if (sentEmail(p)) return 'enviado_email';\n    return hasEmail ? 'toca_email' : 'fallido_sin_email';\n  };\n\n  let paso = null;\n  let canal = 'whatsapp';\n  if (cita.estado === 'no_asistio') {\n    const st = stepState('te_extranamos');\n    if (st !== 'pendiente' && st !== 'toca_email') { why(st === 'fallido_sin_email' ? 'whatsapp_fallido' : 'ya_enviado', { paso: 'te_extranamos' }); continue; }\n    // Already rebooked → nothing to recover. / Ya reagendó → nada que recuperar.\n    if (t.Citas.some(c => c.lead_id === cita.lead_id && c.cita_id !== cita.cita_id && ACTIVE.includes(c.estado))) { why('ya_reagendo'); continue; }\n    if (st === 'pendiente' && minsSinceEnd > MAX_AGE_MIN) { why('muy_vieja'); continue; }\n    paso = 'te_extranamos';\n    if (st === 'toca_email') canal = 'email';\n  } else {\n    if (t.Calificaciones.some(c => c.cita_id === cita.cita_id)) { why('ya_califico'); continue; }\n    const st = stepState('gracias');\n    if (st === 'pendiente' || st === 'toca_email') {\n      if (st === 'pendiente' && minsSinceEnd > MAX_AGE_MIN) { why('muy_vieja'); continue; }\n      paso = 'gracias';\n      if (st === 'toca_email') canal = 'email';\n    } else if (st === 'fallido_sin_email') { why('whatsapp_fallido', { paso: 'gracias' }); continue; }\n    else if (st === 'enviado_email') { why('gracias_por_email'); continue; }   // no reminder by email / sin recordatorio por email\n    else {\n      const gracias = sentWa('gracias');\n      if (sentWa('recordatorio_nota')) { why('ya_enviado', { paso: 'recordatorio_nota' }); continue; }\n      const graciasAt = parse(gracias.fecha);\n      if (!graciasAt) { why('fecha_gracias_invalida'); continue; }\n      // She wrote after the thank-you → Sofía is talking with her; no reminder. / Escribió después → la atiende Sofía.\n      const replied = t.Conversaciones.some(m => m.lead_id === cita.lead_id && m.rol === 'user' && (parse(m.fecha) || graciasAt) > graciasAt);\n      if (replied) { why('respondio'); continue; }\n      const remindAt = graciasAt.plus({ minutes: REMINDER_MIN });\n      if (now < remindAt) { why('aun_no', { paso: 'recordatorio_nota', cuando: fmt(remindAt) }); continue; }\n      paso = 'recordatorio_nota';\n    }\n  }\n  if (!inHours) { why('fuera_de_horario', { paso }); continue; }\n\n  due.push({\n    cita_id: cita.cita_id, lead_id: cita.lead_id, nombre: cita.nombre || lead.nombre, whatsapp,\n    idioma: lead.idioma || 'es', servicio: cita.servicio, servicio_en: servicioEn[cita.servicio] || cita.servicio,\n    email: lead.email || '', inicio: cita.inicio, fin: cita.fin, estado_cita: cita.estado, paso, canal,\n    secuencia: cita.estado === 'no_asistio' ? 'no_show' : 'post_servicio', ronda: cita.inicio, plantilla: paso\n  });\n  why('toca', { paso, canal });\n}\n\nconst picked = due.slice(0, MAX_PER_RUN);\nreturn picked.length\n  ? picked.map(d => ({ json: { ...d, demo_mode: DEMO_MODE, ahora: fmt(now), negocio } }))\n  : [{ json: { nada: true, ahora: fmt(now), demo_mode: DEMO_MODE, report } }];\n"
+      }
+    },
+    {
+      "id": "n-if",
+      "name": "Any Message Due?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        900,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.cita_id ? true : false }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "s-trig",
+      "name": "Note Triggers",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        0
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 180,
+        "color": 5,
+        "content": "## ⏰ TRIGGERS / DISPARADORES\n**EN:** Checks every minute who needs a post-service message; Manual Test runs it by hand.\n**ES:** Revisa cada minuto a quién le toca un mensaje post-servicio; Manual Test lo corre a mano."
+      }
+    },
+    {
+      "id": "s-read",
+      "name": "Note Read",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        80
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 180,
+        "color": 4,
+        "content": "## 📥 READ SHEETS / LEER HOJAS\n**EN:** One batchGet: Leads, Citas, Seguimientos, Calificaciones, Conversaciones, Escalamientos, Negocio, Servicios.\n**ES:** Un solo batchGet con las 8 hojas que necesita la decisión."
+      }
+    },
+    {
+      "id": "s-pick",
+      "name": "Note Pick",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        540,
+        20
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 240,
+        "color": 6,
+        "content": "## 🧠 PICK MESSAGES / ELEGIR MENSAJES\n**EN:** asistio → thank you + rating (2 h after, DEMO 2 min) → one reminder if silent (24 h, DEMO 5 min). no_asistio → 'we missed you'. WhatsApp failed → same message by email. Skips opt-out, open cases, already rated or rebooked.\n**ES:** asistio → gracias + nota (2 h después, DEMO 2 min) → un recordatorio si calla (24 h, DEMO 5 min). no_asistio → 'te extrañamos'. WhatsApp fallido → mismo mensaje por email. Salta opt-out, casos abiertos, ya calificó o ya reagendó."
+      }
+    },
+    {
+      "id": "s-if",
+      "name": "Note Due",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        840,
+        80
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 180,
+        "color": 7,
+        "content": "## 🔀 ANY DUE? / ¿TOCA ALGUNO?\n**EN:** True → build and send (block 2). False → nothing this minute.\n**ES:** Verdadero → armar y enviar (bloque 2). Falso → nada este minuto."
+      }
+    },
+    {
+      "id": "s-over",
+      "name": "Note Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -280
+      ],
+      "parameters": {
+        "width": 560,
+        "height": 240,
+        "color": 3,
+        "content": "# P34a - Lumière Post-Service\n**EN:** After the visit: thank-you + 1-5 rating by WhatsApp. 4-5 → Google review link; 1-3 → owner alert, no public review (handled by Sofía in P31b → P34b). No-shows get a 'we missed you, rebook?' message.\n**ES:** Después de la cita: gracias + nota 1-5 por WhatsApp. 4-5 → link de reseña en Google; 1-3 → alerta a la dueña, sin reseña pública (lo maneja Sofía en P31b → P34b). A los no-shows: 'te extrañamos, ¿reagendamos?'."
+      }
+    },
+    {
+      "id": "n-build",
+      "name": "Build Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Fills the fixed post-service template (Meta template style: fixed text + variables). No AI: $0 per message.\n// Llena la plantilla fija post-servicio (estilo plantilla de Meta: texto fijo + variables). Sin IA: $0 por mensaje.\n// Templates / Plantillas: gracias (thank you + 1-5 rating) · recordatorio_nota (one nudge) · te_extranamos (no-show, rebook)\n// WhatsApp → input for P31e - Lumière Send WhatsApp. Email (fallback) → input for P32c - Lumière Send Email.\n// \"Consulta + …\" → \"consulta + …\" mid-sentence; brand names with inner capitals (\"HydraFacial\") stay as they are\nconst lower = s => { const w = String(s || '').split(/\\s/)[0]; return w.length > 1 && w.slice(1) === w.slice(1).toLowerCase() ? s[0].toLowerCase() + s.slice(1) : s; };\nconst WA = {\n  es: {\n    gracias: v => `Hola ${v.nombre} 💛 Gracias por confiar en ${v.spa} ${v.hoy ? 'hoy ' : ''}para tu ${lower(v.servicio)}. Esperamos que te hayas sentido muy bien atendida.\\n\\n¿Cómo te fue? Respóndenos con un número del *1 al 5* (5 = excelente). Tu opinión nos ayuda a cuidarte mejor.\\n\\nResponde STOP si no quieres recibir más mensajes.`,\n    recordatorio_nota: v => `Hola ${v.nombre}, una pregunta rápida 😊 Del *1 al 5*, ¿cómo calificarías tu ${lower(v.servicio)} en ${v.spa}? Leemos cada respuesta.`,\n    te_extranamos: v => `Hola ${v.nombre}, te extrañamos ${v.hoy ? 'hoy ' : ''}en ${v.spa} 💛 Sabemos que a veces surgen imprevistos. ¿Quieres que te busque otro horario para tu ${lower(v.servicio)}? Respóndeme por aquí y lo agendamos en un momento.\\n\\nResponde STOP si no quieres recibir más mensajes.`\n  },\n  en: {\n    gracias: v => `Hi ${v.nombre} 💛 Thank you for trusting ${v.spa} ${v.hoy ? 'today ' : ''}for your ${lower(v.servicio)}. We hope you felt well taken care of.\\n\\nHow did it go? Reply with a number from *1 to 5* (5 = excellent). Your feedback helps us take better care of you.\\n\\nReply STOP to opt out.`,\n    recordatorio_nota: v => `Hi ${v.nombre}, quick question 😊 From *1 to 5*, how would you rate your ${lower(v.servicio)} at ${v.spa}? We read every reply.`,\n    te_extranamos: v => `Hi ${v.nombre}, we missed you ${v.hoy ? 'today ' : ''}at ${v.spa} 💛 We know things come up. Would you like me to find you another time for your ${lower(v.servicio)}? Just reply here and we'll book it in a moment.\\n\\nReply STOP to opt out.`\n  }\n};\n// Email fallback (paragraphs split by a blank line; P32c adds logo, WhatsApp button, signature and unsubscribe footer)\n// Respaldo por email (párrafos separados por línea en blanco; P32c pone logo, botón a WhatsApp, firma y pie de baja)\nconst EMAIL = {\n  es: {\n    gracias: v => ({ asunto: `Gracias por visitarnos, ${v.nombre}`, cta: 'Calificar por WhatsApp',\n      mensaje: `Hola ${v.nombre},\\n\\nGracias por confiar en ${v.spa} para tu ${lower(v.servicio)}. Esperamos que te hayas sentido muy bien atendida.\\n\\n¿Cómo te fue? Escríbenos por WhatsApp un número del 1 al 5 (5 = excelente). Tu opinión nos ayuda a cuidarte mejor.` }),\n    te_extranamos: v => ({ asunto: `Te extrañamos en ${v.spa}`, cta: 'Reagendar por WhatsApp',\n      mensaje: `Hola ${v.nombre},\\n\\nTe extrañamos en tu cita de ${lower(v.servicio)}. Sabemos que a veces surgen imprevistos.\\n\\nSi quieres, escríbenos por WhatsApp y te buscamos otro horario en un momento.` })\n  },\n  en: {\n    gracias: v => ({ asunto: `Thank you for visiting us, ${v.nombre}`, cta: 'Rate us on WhatsApp',\n      mensaje: `Hi ${v.nombre},\\n\\nThank you for trusting ${v.spa} for your ${lower(v.servicio)}. We hope you felt well taken care of.\\n\\nHow did it go? Message us on WhatsApp with a number from 1 to 5 (5 = excellent). Your feedback helps us take better care of you.` }),\n    te_extranamos: v => ({ asunto: `We missed you at ${v.spa}`, cta: 'Rebook on WhatsApp',\n      mensaje: `Hi ${v.nombre},\\n\\nWe missed you at your ${lower(v.servicio)} appointment. We know things come up.\\n\\nIf you'd like, message us on WhatsApp and we'll find you another time in a moment.` })\n  }\n};\n\nreturn $input.all().map(item => {\n  const r = item.json;\n  const n = r.negocio || {};\n  const lang = String(r.idioma).toLowerCase().startsWith('en') ? 'en' : 'es';\n  const tz = n.zona_horaria || 'America/Phoenix';\n  const inicio = DateTime.fromFormat(String(r.inicio).slice(0, 16), 'yyyy-MM-dd HH:mm', { zone: tz });\n  const v = {\n    nombre: String(r.nombre || '').trim().split(/\\s+/)[0] || (lang === 'es' ? 'hola' : 'there'),\n    spa: n.nombre || 'Lumière Aesthetics',\n    servicio: lang === 'en' ? (r.servicio_en || r.servicio) : r.servicio,\n    hoy: inicio.isValid && inicio.hasSame($now.setZone(tz), 'day')\n  };\n  const base = { lead_id: r.lead_id, cita_id: r.cita_id, paso: r.paso, secuencia: r.secuencia, ronda: r.ronda,\n                 canal: r.canal, plantilla: r.plantilla, idioma: lang, origen: 'P34' };\n  if (r.canal === 'email') {\n    const e = EMAIL[lang][r.plantilla](v);\n    return { json: { ...base, email: r.email, asunto: e.asunto, mensaje: e.mensaje, cta_texto: e.cta } };\n  }\n  return { json: { ...base, whatsapp: r.whatsapp, mensaje: WA[lang][r.plantilla](v), rol: 'assistant', off_topic: false, solo_registrar: false } };\n});\n"
+      }
+    },
+    {
+      "id": "n-iswa",
+      "name": "Is WhatsApp?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1500,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "version": 2,
+            "leftValue": "",
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "w1",
+              "leftValue": "={{ $json.canal }}",
+              "rightValue": "whatsapp",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n-sendwa",
+      "name": "Send WhatsApp",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1800,
+        200
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "YOUR_P31E_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "mode": "each",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "n-sendem",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1800,
+        420
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "YOUR_P32C_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "mode": "each",
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "n-rowwa",
+      "name": "Build Seguimiento Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2100,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// One row for Seguimientos per message, sent or failed (WhatsApp branch = output 0, email branch = output 1).\n// Una fila en Seguimientos por mensaje, enviado o fallido (rama WhatsApp = salida 0, rama email = salida 1).\n// Columns / Columnas: seguimiento_id, fecha, lead_id, origen, secuencia, ronda, paso, canal, mensaje, message_id, resultado, cita_id\nconst BRANCH = 0;   // 0 = WhatsApp (after P31e) · 1 = email (after P32c)\nconst msgs = $('Is WhatsApp?').all(BRANCH);\nconst rand = () => Math.random().toString(36).slice(2, 7).toUpperCase();\nreturn $input.all().map((item, i) => {\n  const t = msgs[i].json;\n  const r = item.json || {};\n  const fecha = r.fecha || $now.setZone('America/Phoenix').toFormat('yyyy-MM-dd HH:mm:ss');\n  const resultado = BRANCH === 0\n    ? ((r.ok === false || r.estado_entrega === 'error') ? 'error: ' + (r.error || 'send_failed') : (r.estado_entrega || 'queued'))\n    : (r.ok ? 'sent' : 'error: ' + (r.error || 'send_failed'));\n  const mensaje = BRANCH === 0 ? t.mensaje : `${t.asunto}\\n\\n${t.mensaje}`;\n  return { json: {\n    row: ['SEG-' + fecha.slice(0, 10).replace(/-/g, '') + '-' + rand(), fecha, t.lead_id, 'P34', t.secuencia, t.ronda, t.paso,\n          t.canal, mensaje, r.wa_message_sid || r.message_id || '', resultado, t.cita_id],\n    cita_id: t.cita_id, paso: t.paso, canal: t.canal, resultado\n  } };\n});\n"
+      }
+    },
+    {
+      "id": "n-rowem",
+      "name": "Build Email Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2100,
+        420
+      ],
+      "parameters": {
+        "jsCode": "// One row for Seguimientos per message, sent or failed (WhatsApp branch = output 0, email branch = output 1).\n// Una fila en Seguimientos por mensaje, enviado o fallido (rama WhatsApp = salida 0, rama email = salida 1).\n// Columns / Columnas: seguimiento_id, fecha, lead_id, origen, secuencia, ronda, paso, canal, mensaje, message_id, resultado, cita_id\nconst BRANCH = 1;   // 0 = WhatsApp (after P31e) · 1 = email (after P32c)\nconst msgs = $('Is WhatsApp?').all(BRANCH);\nconst rand = () => Math.random().toString(36).slice(2, 7).toUpperCase();\nreturn $input.all().map((item, i) => {\n  const t = msgs[i].json;\n  const r = item.json || {};\n  const fecha = r.fecha || $now.setZone('America/Phoenix').toFormat('yyyy-MM-dd HH:mm:ss');\n  const resultado = BRANCH === 0\n    ? ((r.ok === false || r.estado_entrega === 'error') ? 'error: ' + (r.error || 'send_failed') : (r.estado_entrega || 'queued'))\n    : (r.ok ? 'sent' : 'error: ' + (r.error || 'send_failed'));\n  const mensaje = BRANCH === 0 ? t.mensaje : `${t.asunto}\\n\\n${t.mensaje}`;\n  return { json: {\n    row: ['SEG-' + fecha.slice(0, 10).replace(/-/g, '') + '-' + rand(), fecha, t.lead_id, 'P34', t.secuencia, t.ronda, t.paso,\n          t.canal, mensaje, r.wa_message_sid || r.message_id || '', resultado, t.cita_id],\n    cita_id: t.cita_id, paso: t.paso, canal: t.canal, resultado\n  } };\n});\n"
+      }
+    },
+    {
+      "id": "n-log",
+      "name": "Log to Seguimientos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2400,
+        300
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/YOUR_GOOGLE_SHEET_ID/values/Seguimientos!A1:L1:append",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "valueInputOption",
+              "value": "RAW"
+            },
+            {
+              "name": "insertDataOption",
+              "value": "INSERT_ROWS"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [ $json.row ] }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "s-build",
+      "name": "Note Build",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1140,
+        40
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 6,
+        "content": "## 📝 BUILD MESSAGE / ARMAR MENSAJE\n**EN:** Fixed Meta-style templates (gracias / recordatorio_nota / te_extranamos), ES/EN, no AI: $0 per message. Email version for the fallback.\n**ES:** Plantillas fijas estilo Meta (gracias / recordatorio_nota / te_extranamos), ES/EN, sin IA: $0 por mensaje. Versión email para el respaldo."
+      }
+    },
+    {
+      "id": "s-send",
+      "name": "Note Send",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1740,
+        -40
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 220,
+        "color": 5,
+        "content": "## 📤 SEND / ENVIAR\n**EN:** WhatsApp via shared P31e (logged in Conversaciones, origen P34, so Sofía sees it). Email fallback via shared P32c (Lumière HTML template + unsubscribe).\n**ES:** WhatsApp por la pieza P31e (queda en Conversaciones, origen P34: Sofía lo ve). Respaldo por email con P32c (plantilla HTML de Lumière + baja)."
+      }
+    },
+    {
+      "id": "s-log",
+      "name": "Note Log",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2340,
+        40
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 4,
+        "content": "## 🧾 LOG / REGISTRAR\n**EN:** One row per message in Seguimientos (cita_id, paso, canal) so nothing is sent twice; failed WhatsApp rows trigger the email fallback next minute.\n**ES:** Una fila por mensaje en Seguimientos (cita_id, paso, canal) para no repetir; un WhatsApp fallido dispara el respaldo por email al minuto siguiente."
+      }
+    },
+    {
+      "id": "x-evt-touch",
+      "name": "Emit Touch Event",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        2400,
+        520
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "YOUR_P36A_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "tipo": "={{ String($json.row[10]).startsWith('error') ? '' : 'toque_enviado' }}",
+            "proyecto": "={{ $json.row[3] }}",
+            "lead_id": "={{ $json.row[2] }}",
+            "ref_id": "={{ $json.row[11] || $json.row[0] }}",
+            "detalle": "={{ $json.row[4] + ' · ' + $json.row[6] + ' · ' + $json.row[7] }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "tipo",
+              "displayName": "tipo",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "proyecto",
+              "displayName": "proyecto",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "ref_id",
+              "displayName": "ref_id",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "detalle",
+              "displayName": "detalle",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "x-evt-note",
+      "name": "Note - Emit Touch Event",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2340,
+        680
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🏢 EMIT TOUCH EVENT / EVENTO DE TOQUE\n\ntoque_enviado → P36a (Eventos), one per message; failed sends are skipped. Fire and forget.\ntoque_enviado → P36a (Eventos), uno por mensaje; los fallidos no cuentan. Dispara y sigue."
+      }
+    }
+  ],
+  "connections": {
+    "Every Minute": {
+      "main": [
+        [
+          {
+            "node": "Read All Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Test": {
+      "main": [
+        [
+          {
+            "node": "Read All Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read All Sheets": {
+      "main": [
+        [
+          {
+            "node": "Pick Due Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick Due Messages": {
+      "main": [
+        [
+          {
+            "node": "Any Message Due?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Message Due?": {
+      "main": [
+        [
+          {
+            "node": "Build Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Message": {
+      "main": [
+        [
+          {
+            "node": "Is WhatsApp?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is WhatsApp?": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Build Seguimiento Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email": {
+      "main": [
+        [
+          {
+            "node": "Build Email Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Seguimiento Row": {
+      "main": [
+        [
+          {
+            "node": "Log to Seguimientos",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Emit Touch Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Email Row": {
+      "main": [
+        [
+          {
+            "node": "Log to Seguimientos",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Emit Touch Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Phoenix",
+    "saveManualExecutions": true,
+    "errorWorkflow": "YOUR_ERROR_WORKFLOW_ID"
+  }
+}

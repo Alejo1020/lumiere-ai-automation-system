@@ -1,0 +1,311 @@
+{
+  "name": "P36b - Lumière Weekly Summary",
+  "nodes": [
+    {
+      "id": "w-sched",
+      "name": "Every Monday 8 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * 1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "w-manual",
+      "name": "Manual Test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        400
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "w-cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// DEMO_MODE = true: demo Sheet + a fixed demo week (for sales demos). false: real Sheet, last full Monday-Sunday week.\n// DEMO_MODE = true: Sheet demo + una semana fija de demostración. false: Sheet real, la semana pasada completa.\nconst DEMO_MODE = true;\nreturn [{ json: DEMO_MODE\n  ? { sheet: 'demo', desde: '2026-10-20', hasta: '2026-10-26' }\n  : { sheet: 'real', desde: '', hasta: '' } }];\n"
+      }
+    },
+    {
+      "id": "w-met",
+      "name": "Get Metrics",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "YOUR_P36D_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "sheet": "={{ $json.sheet }}",
+            "desde": "={{ $json.desde }}",
+            "hasta": "={{ $json.hasta }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "sheet",
+              "displayName": "sheet",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "desde",
+              "displayName": "desde",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "hasta",
+              "displayName": "hasta",
+              "type": "string",
+              "display": true,
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "w-msg",
+      "name": "Build Weekly Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Monday WhatsApp for the owner: last week in 30 seconds. Only numbers from P36d; nothing written by AI.\n// WhatsApp del lunes para la dueña: la semana pasada en 30 segundos. Solo números de P36d; nada lo escribe la IA.\nconst m = $input.first().json;\nconst P = m.periodo, B = m.anterior, n = m.negocio || {};\nconst es = String(n.idioma_duena || 'en').startsWith('es');\nconst loc = es ? 'es-MX' : 'en-US';\nconst usd = v => '$' + Math.round(v).toLocaleString(loc);\nconst d1 = DateTime.fromISO(P.desde).setLocale(es ? 'es' : 'en'), d2 = DateTime.fromISO(P.hasta).setLocale(es ? 'es' : 'en');\nconst sameMonth = d1.month === d2.month;\nconst rango = es\n  ? (sameMonth ? `${d1.toFormat('d')} al ${d2.toFormat('d LLL')}` : `${d1.toFormat('d LLL')} al ${d2.toFormat('d LLL')}`)\n  : (sameMonth ? `${d1.toFormat('LLL d')}-${d2.toFormat('d')}` : `${d1.toFormat('LLL d')} - ${d2.toFormat('LLL d')}`);\nconst delta = B.total_usd > 0 ? Math.round(100 * (P.total_usd - B.total_usd) / B.total_usd) : null;\nconst trend = delta === null ? '' : (delta >= 0 ? '↑ ' : '↓ ') + Math.abs(delta) + ' %';\nconst plural = (k, one, many) => k === 1 ? one : many;\n\nconst L = es ? [\n  `📊 *${n.nombre || 'Lumière'} · semana del ${rango}*`,\n  `• ${P.leads} ${plural(P.leads, 'lead nuevo', 'leads nuevos')}` + (P.respuesta_prom_seg !== null ? `, respondidos en ~${P.respuesta_prom_seg} s` : '') + (P.leads_fuera_horario ? ` (${P.leads_fuera_horario} fuera de horario)` : ''),\n  `• ${P.citas_agendadas} ${plural(P.citas_agendadas, 'cita agendada', 'citas agendadas')} por Sofía, sin recepcionista`,\n  P.no_shows_evitados ? `• ${P.no_shows_evitados} ${plural(P.no_shows_evitados, 'no-show evitado', 'no-shows evitados')} ≈ ${usd(P.valor_no_shows_usd)}` : '',\n  [P.clientas_que_vuelven ? `${P.clientas_que_vuelven} ${plural(P.clientas_que_vuelven, 'clienta volvió', 'clientas volvieron')}` : '',\n   P.resenas_pedidas ? `${P.resenas_pedidas} ${plural(P.resenas_pedidas, 'reseña pedida', 'reseñas pedidas')}` : ''].filter(Boolean).join(' · ').replace(/^(.+)$/, '• $1'),\n  `⏱️ ~${Math.round(P.horas_ahorradas)} h de recepción ahorradas`,\n  `💰 Valor estimado: *${usd(P.total_usd)}*` + (trend ? ` (${trend} vs. la semana anterior)` : ''),\n  m.casos_abiertos ? `⚠️ ${m.casos_abiertos} ${plural(m.casos_abiertos, 'caso abierto espera', 'casos abiertos esperan')} a tu equipo` : ''\n] : [\n  `📊 *${n.nombre || 'Lumière'} · week of ${rango}*`,\n  `• ${P.leads} new ${plural(P.leads, 'lead', 'leads')}` + (P.respuesta_prom_seg !== null ? `, answered in ~${P.respuesta_prom_seg}s` : '') + (P.leads_fuera_horario ? ` (${P.leads_fuera_horario} after hours)` : ''),\n  `• ${P.citas_agendadas} ${plural(P.citas_agendadas, 'appointment', 'appointments')} booked by Sofía, no front desk needed`,\n  P.no_shows_evitados ? `• ${P.no_shows_evitados} ${plural(P.no_shows_evitados, 'no-show', 'no-shows')} avoided ≈ ${usd(P.valor_no_shows_usd)}` : '',\n  [P.clientas_que_vuelven ? `${P.clientas_que_vuelven} ${plural(P.clientas_que_vuelven, 'client', 'clients')} came back` : '',\n   P.resenas_pedidas ? `${P.resenas_pedidas} ${plural(P.resenas_pedidas, 'review', 'reviews')} requested` : ''].filter(Boolean).join(' · ').replace(/^(.+)$/, '• $1'),\n  `⏱️ ~${Math.round(P.horas_ahorradas)} front-desk hours saved`,\n  `💰 Estimated value: *${usd(P.total_usd)}*` + (trend ? ` (${trend} vs. the week before)` : ''),\n  m.casos_abiertos ? `⚠️ ${m.casos_abiertos} open ${plural(m.casos_abiertos, 'case is', 'cases are')} waiting for your team` : ''\n];\nconst whatsapp = '+' + String(n.whatsapp_duena || '').replace(/\\D/g, '');\nif (whatsapp.length < 12) return [];\n// Inputs of P31e - Lumière Send WhatsApp (no client: empty lead_id)\nreturn [{ json: { lead_id: '', whatsapp, mensaje: L.filter(Boolean).join('\\n'), rol: 'reporte_duena', origen: 'P36' } }];\n"
+      }
+    },
+    {
+      "id": "w-send",
+      "name": "Send to Owner",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1200,
+        300
+      ],
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "YOUR_P31E_WORKFLOW_ID",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "w-main",
+      "name": "Sticky Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -160
+      ],
+      "parameters": {
+        "width": 1520,
+        "height": 220,
+        "color": 5,
+        "content": "## P36b - Weekly Summary / Resumen semanal\n**EN:** Every Monday at 8 AM (Arizona) the owner gets a short WhatsApp with last week in numbers: new leads and response time, bookings made by Sofía, no-shows avoided in dollars, clients who came back, reviews requested, hours saved and the estimated value vs. the week before. Constant proof of what the retainer pays for.\n\n**ES:** Cada lunes a las 8 a. m. (Arizona) la dueña recibe un WhatsApp corto con la semana pasada en números: leads y tiempo de respuesta, citas que agendó Sofía, no-shows evitados en dólares, clientas que volvieron, reseñas pedidas, horas ahorradas y el valor estimado vs. la semana anterior. Prueba constante de lo que paga el retainer."
+      }
+    },
+    {
+      "id": "w-n0",
+      "name": "Note - Triggers",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        520
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "⏰ TRIGGERS / DISPARADORES\n\nMonday 8:00 Arizona (cron 0 8 * * 1) or Manual Test.\nLunes 8:00 Arizona (cron 0 8 * * 1) o Manual Test."
+      }
+    },
+    {
+      "id": "w-n1",
+      "name": "Note - Config",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        520
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "⚙️ CONFIG\n\nDEMO_MODE true = demo Sheet + fixed demo week. false = real Sheet, last full week.\nDEMO_MODE true = Sheet demo + semana fija. false = Sheet real, la semana pasada."
+      }
+    },
+    {
+      "id": "w-n2",
+      "name": "Note - Get Metrics",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        540,
+        520
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🧮 GET METRICS / TRAER MÉTRICAS\n\nP36d: the week + the week before, from the Sheet and the ROI assumptions.\nP36d: la semana + la anterior, desde el Sheet y los supuestos de ROI."
+      }
+    },
+    {
+      "id": "w-n3",
+      "name": "Note - Build Weekly Message",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        840,
+        520
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "✍️ BUILD MESSAGE / ARMAR MENSAJE\n\nFixed template ES/EN (idioma_duena), only real numbers, zero lines hidden.\nPlantilla fija ES/EN (idioma_duena), solo números reales, sin líneas en cero."
+      }
+    },
+    {
+      "id": "w-n4",
+      "name": "Note - Send to Owner",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1140,
+        520
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "📲 SEND TO OWNER / ENVIAR A LA DUEÑA\n\nP31e → Negocio.whatsapp_duena (logged as reporte_duena).\nP31e → Negocio.whatsapp_duena (queda como reporte_duena)."
+      }
+    }
+  ],
+  "connections": {
+    "Every Monday 8 AM": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Test": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Get Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Metrics": {
+      "main": [
+        [
+          {
+            "node": "Build Weekly Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Weekly Message": {
+      "main": [
+        [
+          {
+            "node": "Send to Owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Phoenix",
+    "errorWorkflow": "YOUR_ERROR_WORKFLOW_ID"
+  }
+}

@@ -1,0 +1,314 @@
+{
+  "name": "P32c - Lumière Send Email",
+  "nodes": [
+    {
+      "id": "e-trigger",
+      "name": "When Called",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "e-read",
+      "name": "Read Negocio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "parameters": {
+        "method": "GET",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/YOUR_GOOGLE_SHEET_ID/values/Negocio",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "e-prep",
+      "name": "Prepare Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Channel block for email (shared: P32, P34, P35). Wraps the text in the Lumière HTML template (same look as the landing)\n// and adds the legal footer (CAN-SPAM: physical address + unsubscribe link).\n// Bloque de canal para email (compartido). Envuelve el texto en la plantilla HTML de Lumière (mismo estilo de la landing)\n// y agrega el pie legal (CAN-SPAM: dirección física + link de baja).\n// Input: { lead_id, email, asunto, mensaje (plain text, paragraphs split by a blank line), idioma ('es'|'en'), origen,\n//          cta_texto? (optional button label) }\n// Internal mode (P36 owner reports): interno = true, html_cuerpo (trusted HTML built by a Lumière flow), cta_url?, firma?, pie?\n//   -> no lead_id needed and no unsubscribe link (it is not marketing: it goes to the owner).\n// Modo interno (reportes a la dueña): sin lead_id ni link de baja (no es marketing: va para la dueña).\nconst i = $('When Called').first().json;\nconst negocio = {};\n($input.first().json.values || []).slice(1).forEach(r => { if (r[0]) negocio[r[0]] = r[1] || ''; });\n\nconst txt = x => (x == null ? '' : String(x)).trim();\nconst esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\nconst email = txt(i.email).toLowerCase();\nconst asunto = txt(i.asunto).slice(0, 120);\nconst cuerpo = txt(i.mensaje);\nconst lead_id = txt(i.lead_id);\nconst es = txt(i.idioma) !== 'en';\nconst errores = [];\nif (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) errores.push('email');\nif (!asunto) errores.push('asunto');\nif (!cuerpo) errores.push('mensaje');\nconst interno = i.interno === true || i.interno === 'true';\nif (!lead_id && !interno) errores.push('lead_id');\n\n// Public n8n URL ($env is blocked in Code nodes here) / URL pública de n8n ($env bloqueado en los Code nodes)\nconst base = String($execution.resumeUrl || '').split('webhook-waiting')[0];\nconst unsubscribe = `${base}webhook/lumiere-unsubscribe?id=${encodeURIComponent(lead_id)}`;\nconst spa = negocio.nombre || 'Lumière Aesthetics';\nconst site = (negocio.sitio_web || '').replace(/\\/$/, '');\nconst wa = String(negocio.whatsapp_spa || '').replace(/\\D/g, '');\nconst cta = txt(i.cta_texto) || (es ? 'Escríbenos por WhatsApp' : 'Message us on WhatsApp');\nconst ctaUrl = txt(i.cta_url) || (wa ? `https://wa.me/${wa}` : site);\n\n// Brand tokens from the landing (css/styles.css) / Tokens de marca de la landing\nconst C = { canvas: '#FFFFFF', mist: '#F7F3EE', soft: '#EFE8DF', pale: '#DDD2C4', steel: '#75685C', slate: '#4A3F37', ink: '#2A2420', gold: '#B08D57' };\nconst SERIF = \"'Libre Caslon Condensed', Georgia, 'Times New Roman', serif\";\nconst SANS = \"Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif\";\n\n// Paragraphs; the last one is dropped if it is only the signature (the template signs)\n// Párrafos; se quita el último si es solo la firma (la plantilla firma)\nlet paras = cuerpo.split(/\\n\\s*\\n/).map(p => p.trim()).filter(Boolean);\nif (paras.length > 1 && paras[paras.length - 1].replace(/[^\\p{L}]/gu, '').toLowerCase() === spa.replace(/[^\\p{L}]/gu, '').toLowerCase()) paras.pop();\nconst preheader = paras.length > 1 ? paras[1].slice(0, 110) : paras[0].slice(0, 110);\nconst pHtml = paras.map((p, k) => `<p style=\"margin:0 0 18px;font-family:${SANS};font-size:16px;line-height:1.6;color:${k === 0 ? C.ink : C.slate};\">${esc(p).replace(/\\n/g, '<br>')}</p>`).join('');\nconst bodyHtml = interno && txt(i.html_cuerpo) ? String(i.html_cuerpo) : pHtml;\nconst footerNote = interno\n  ? esc(txt(i.pie) || (es ? 'Informe automático del sistema.' : 'Automatic system report.'))\n  : `${es ? 'Recibes este correo porque pediste información en nuestro sitio web.' : 'You are receiving this email because you requested information on our website.'}\n    <a href=\"${esc(unsubscribe)}\" style=\"color:${C.slate};text-decoration:underline;\">${es ? 'Darme de baja' : 'Unsubscribe'}</a>`;\n\nconst html = `<!doctype html><html lang=\"${es ? 'es' : 'en'}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>${esc(asunto)}</title>\n<link href=\"https://fonts.googleapis.com/css2?family=Libre+Caslon+Condensed:wght@400&family=Inter:wght@400;500&display=swap\" rel=\"stylesheet\">\n</head><body style=\"margin:0;padding:0;background:${C.mist};\">\n<div style=\"display:none;max-height:0;overflow:hidden;opacity:0;\">${esc(preheader)}</div>\n<table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"background:${C.mist};\"><tr><td align=\"center\" style=\"padding:32px 12px;\">\n<table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\" style=\"width:100%;max-width:600px;background:${C.canvas};border:1px solid ${C.pale};\">\n  <tr><td style=\"padding:32px 40px 24px;text-align:center;border-bottom:1px solid ${C.pale};\">\n    <div style=\"font-family:${SERIF};font-size:40px;line-height:1;letter-spacing:-0.01em;color:${C.ink};\">Lumière</div>\n    <div style=\"font-family:${SANS};font-size:11px;letter-spacing:0.3em;color:${C.steel};margin-top:6px;\">AESTHETICS</div>\n  </td></tr>\n  <tr><td style=\"padding:40px 40px 8px;\">${bodyHtml}</td></tr>\n  <tr><td style=\"padding:8px 40px 36px;\">\n    <table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td style=\"background:${C.ink};\">\n      <a href=\"${esc(ctaUrl)}\" style=\"display:inline-block;padding:16px 32px;font-family:${SANS};font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:${C.canvas};text-decoration:none;\">${esc(cta)}</a>\n    </td></tr></table>\n    <p style=\"margin:28px 0 0;font-family:${SERIF};font-size:22px;line-height:1.2;color:${C.ink};\">${esc(interno ? (txt(i.firma) || spa) : (negocio.nombre_asistente || 'Sofía'))}</p>\n    <p style=\"margin:4px 0 0;font-family:${SANS};font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:${C.gold};\">${esc(spa)}</p>\n  </td></tr>\n  <tr><td style=\"padding:24px 40px;background:${C.soft};font-family:${SANS};font-size:12px;line-height:1.6;color:${C.steel};\">\n    ${esc(spa)} · ${esc(negocio.direccion || '')}<br>\n    ${footerNote}\n  </td></tr>\n</table></td></tr></table></body></html>`;\n\nreturn [{ json: {\n  lead_id, email, asunto, html, remitente: spa, origen: txt(i.origen) || 'P32',\n  unsubscribe_url: interno ? '' : unsubscribe, errores, enviar: errores.length === 0 && Boolean(base)\n} }];\n"
+      }
+    },
+    {
+      "id": "e-if",
+      "name": "Should Send?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        900,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "s1",
+              "leftValue": "={{ $json.enviar ? true : false }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "e-gmail",
+      "name": "Send via Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1200,
+        200
+      ],
+      "webhookId": "df633d2e-1622-45d6-8023-61b8f4c2a444",
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      },
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "={{ $json.asunto }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "appendAttribution": false,
+          "senderName": "={{ $json.remitente }}"
+        }
+      }
+    },
+    {
+      "id": "e-result",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// What the caller gets back / Lo que recibe el flujo que llamó\nconst m = $('Prepare Email').first().json;\nconst sent = $('Send via Gmail').isExecuted;\nconst r = sent ? ($('Send via Gmail').first().json || {}) : {};\nlet estado = 'error', error = '';\nif (!sent) error = 'invalid: ' + (m.errores.join(',') || 'no_public_url');\nelse if (r.id) estado = 'sent';\nelse error = String((r.error && (r.error.message || r.error)) || r.message || 'gmail_error').slice(0, 200);\nreturn [{ json: {\n  ok: estado === 'sent', enviado: estado === 'sent', message_id: r.id || '', estado_entrega: estado, error,\n  fecha: $now.setZone('America/Phoenix').toFormat('yyyy-MM-dd HH:mm:ss')\n} }];\n"
+      }
+    },
+    {
+      "id": "e-main",
+      "name": "Sticky Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        0
+      ],
+      "parameters": {
+        "width": 1620,
+        "height": 240,
+        "color": 5,
+        "content": "## P32c - Lumière Send Email (shared piece / pieza compartida)\n**EN:** Email channel for every Lumière flow (P32 nurturing, P34, P35). Wraps the text in the Lumière HTML template (same look as the landing) and adds the legal footer (spa name + physical address from the Negocio sheet + unsubscribe link, CAN-SPAM) and sends with Gmail. Input `{lead_id, email, asunto, mensaje, idioma, origen}`; output `{ok, enviado, message_id, estado_entrega, error, fecha}`.\n\n**ES:** Canal de email de todos los flujos de Lumière. Envuelve el texto en la plantilla HTML de Lumière (mismo estilo de la landing) y agrega el pie legal (nombre y dirección física desde Negocio + link de baja, CAN-SPAM) y envía con Gmail."
+      }
+    },
+    {
+      "id": "e-n1",
+      "name": "Note - When Called",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "📥 CALLED BY ANY FLOW / LO LLAMA CUALQUIER FLUJO\n\nReceives the email to send (subject + body already written).\nRecibe el correo a enviar (asunto y cuerpo ya escritos)."
+      }
+    },
+    {
+      "id": "e-n2",
+      "name": "Note - Read Negocio",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "📚 READ NEGOCIO / LEER NEGOCIO\n\nSpa name and address for the footer come from the Sheet.\nEl nombre y la dirección del pie salen del Sheet."
+      }
+    },
+    {
+      "id": "e-n3",
+      "name": "Note - Prepare Email",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        540,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🧾 PREPARE EMAIL / ARMAR CORREO\n\nBranded HTML (landing look, no images) + WhatsApp button + footer with unsubscribe link.\nHTML con la marca (estilo landing, sin imágenes) + botón de WhatsApp + pie con link de baja."
+      }
+    },
+    {
+      "id": "e-n4",
+      "name": "Note - Should Send",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        840,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🚦 SHOULD SEND? / ¿SE ENVÍA?\n\nInvalid data → not sent, the caller gets the error.\nDatos inválidos → no se envía, el flujo que llamó recibe el error."
+      }
+    },
+    {
+      "id": "e-n5",
+      "name": "Note - Send via Gmail",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1140,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "✉️ SEND VIA GMAIL / ENVIAR CON GMAIL\n\nPlain text, sender name = the spa. If Gmail fails the flow continues.\nTexto plano, remitente = el spa. Si Gmail falla el flujo sigue."
+      }
+    },
+    {
+      "id": "e-n6",
+      "name": "Note - Return Result",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "↩️ RETURN RESULT / DEVOLVER RESULTADO\n\nok, message_id and error so the caller can log it.\nok, message_id y error para que el flujo que llamó lo registre."
+      }
+    }
+  ],
+  "connections": {
+    "When Called": {
+      "main": [
+        [
+          {
+            "node": "Read Negocio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Negocio": {
+      "main": [
+        [
+          {
+            "node": "Prepare Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Email": {
+      "main": [
+        [
+          {
+            "node": "Should Send?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Send?": {
+      "main": [
+        [
+          {
+            "node": "Send via Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send via Gmail": {
+      "main": [
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Phoenix",
+    "errorWorkflow": "YOUR_ERROR_WORKFLOW_ID",
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}

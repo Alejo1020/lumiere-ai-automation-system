@@ -1,0 +1,489 @@
+{
+  "name": "P32b - Lumière Email Unsubscribe",
+  "nodes": [
+    {
+      "id": "u-get",
+      "name": "Unsubscribe Link",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        200
+      ],
+      "webhookId": "2b5031b6-baf2-45cd-8984-33388120608d",
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "lumiere-unsubscribe",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "u-post",
+      "name": "Unsubscribe Confirm",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        450
+      ],
+      "webhookId": "b7bc94c5-6999-4ff9-a34a-0580720ef2a0",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lumiere-unsubscribe",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "u-gate",
+      "name": "Unsubscribe Gate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Reads the lead id from the link (GET) or the confirm button (POST) and validates its format.\n// Lee el id del lead del link (GET) o del botón (POST) y valida el formato.\nconst req = $input.first().json;\nconst raw = String((req.body && req.body.id) || (req.query && req.query.id) || '').trim();\nconst lead_id = /^LUM-\\d{8}-[A-Z0-9]{3,10}$/.test(raw) ? raw : '';\nconst step = req.body && req.body.id ? 'confirm' : 'ask';\nreturn [{ json: { lead_id, step } }];\n"
+      }
+    },
+    {
+      "id": "u-isconf",
+      "name": "Is Confirmation?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "u1",
+              "leftValue": "={{ $json.step === 'confirm' && $json.lead_id !== '' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "u-read",
+      "name": "Read Leads",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        200
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "parameters": {
+        "method": "GET",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/YOUR_GOOGLE_SHEET_ID/values/Leads",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "u-build",
+      "name": "Build Opt-Out",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        200
+      ],
+      "parameters": {
+        "jsCode": "// Finds the lead in Leads and prepares the opt-out (estado = opt_out stops every channel).\n// Busca el lead en Leads y prepara la baja (estado = opt_out detiene todos los canales).\nconst id = $('Unsubscribe Gate').first().json.lead_id;\nconst v = $input.first().json.values || [];\nconst h = v[0] || [];\nconst col = name => h.indexOf(name);\nconst idx = v.findIndex((r, k) => k > 0 && r[col('lead_id')] === id);\nif (idx < 1) return [{ json: { found: false } }];          // unknown id: same neutral page / misma página neutra\nconst letter = n => String.fromCharCode(65 + n);            // A-Z is enough (16 columns)\nconst row = idx + 1;\nconst now = $now.setZone('America/Phoenix').toFormat('yyyy-MM-dd HH:mm:ss');\nreturn [{ json: {\n  found: true, lead_id: id, estado_anterior: v[idx][col('estado')] || '',\n  body: { valueInputOption: 'RAW', data: [\n    { range: `Leads!${letter(col('estado'))}${row}`, values: [['opt_out']] },\n    { range: `Leads!${letter(col('ultima_actualizacion'))}${row}`, values: [[now]] }\n  ] }\n} }];\n"
+      }
+    },
+    {
+      "id": "u-found",
+      "name": "Lead Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1500,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "u2",
+              "leftValue": "={{ $json.found ? true : false }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "u-save",
+      "name": "Save Opt-Out",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1800,
+        100
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/YOUR_GOOGLE_SHEET_ID/values:batchUpdate",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {},
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}"
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "u-page",
+      "name": "Build Page",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2100,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Builds the unsubscribe pages. Step 1 (GET) only shows a confirm button: email security scanners open\n// links automatically, so a plain GET must never unsubscribe anyone. Step 2 (POST) shows the result.\n// Arma las páginas de baja. Paso 1 (GET): solo un botón de confirmación (los filtros de correo abren los\n// links solos, así que un GET nunca da de baja a nadie). Paso 2 (POST): muestra el resultado.\nconst page = inner => '<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\">'\n  + '<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Lumière Aesthetics</title><link href=\"https://fonts.googleapis.com/css2?family=Libre+Caslon+Condensed:wght@400&family=Inter:wght@400;500&display=swap\" rel=\"stylesheet\"><style>'\n  + 'body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F7F3EE;font-family:Inter,Helvetica,Arial,sans-serif;color:#2A2420;padding:16px;box-sizing:border-box}'\n  + 'main{max-width:440px;background:#fff;padding:48px 32px;border:1px solid #DDD2C4;text-align:center}'\n  + 'h1{font-family:\\'Libre Caslon Condensed\\',Georgia,serif;font-weight:400;font-size:40px;line-height:1;margin:0 0 6px}h1+small{display:block;font-size:11px;letter-spacing:.3em;color:#75685C;margin:0 0 32px}p{line-height:1.6;margin:0 0 24px}span{color:#75685C;font-size:14px}'\n  + 'button{background:#2A2420;color:#fff;border:0;border-radius:0;padding:16px 32px;font-size:12px;letter-spacing:.2em;text-transform:uppercase;cursor:pointer;font-family:inherit}'\n  + '</style></head><body><main><h1>Lumière</h1><small>AESTHETICS</small>' + inner + '</main></body></html>';\n\nconst isConfirm = $('Unsubscribe Gate').first().json.step === 'confirm';\nconst id = $('Unsubscribe Gate').first().json.lead_id;\nlet inner;\nif (!id) inner = '<p>Este enlace no es válido.<br><span>This link is not valid.</span></p>';\nelse if (!isConfirm) inner = '<p>¿Quieres dejar de recibir correos de Lumière Aesthetics?<br><span>Do you want to stop receiving emails from Lumière Aesthetics?</span></p>'\n  + '<form method=\"POST\"><input type=\"hidden\" name=\"id\" value=\"' + id + '\"><button type=\"submit\">Darme de baja / Unsubscribe</button></form>';\nelse inner = '<p>Listo, ya no te enviaremos más correos.<br><span>Done, you will not receive more emails from us.</span></p>'\n  + '<p><span>Si cambias de opinión, escríbenos por WhatsApp. / If you change your mind, message us on WhatsApp.</span></p>';\n\nreturn [{ json: { html: page(inner) } }];\n"
+      }
+    },
+    {
+      "id": "u-resp",
+      "name": "Respond Page",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2400,
+        300
+      ],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.html }}",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "text/html; charset=utf-8"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "u-main",
+      "name": "Sticky Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -280
+      ],
+      "parameters": {
+        "width": 2620,
+        "height": 240,
+        "color": 5,
+        "content": "## P32b - Lumière Email Unsubscribe (CAN-SPAM)\n**EN:** Every email ends with an unsubscribe link. Opening it (GET) only shows a confirm button, because email scanners open links automatically and must never unsubscribe anyone. The button (POST) sets `Leads.estado = opt_out`, which stops every Lumière channel. Unknown ids get the same neutral page.\n\n**ES:** Cada correo termina con un link de baja. Abrirlo (GET) solo muestra un botón, porque los filtros de correo abren los links solos. El botón (POST) deja `Leads.estado = opt_out` y eso detiene todos los canales de Lumière. Los id desconocidos reciben la misma página neutra."
+      }
+    },
+    {
+      "id": "u-n1",
+      "name": "Note - Webhooks",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        640
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🔗 LINK + CONFIRM / LINK + CONFIRMACIÓN\n\nSame path, two methods: GET opens the page, POST is the button.\nMisma ruta, dos métodos: GET abre la página, POST es el botón."
+      }
+    },
+    {
+      "id": "u-n2",
+      "name": "Note - Unsubscribe Gate",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        640
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🚪 UNSUBSCRIBE GATE / FILTRO DE ENTRADA\n\nReads the lead id and checks its format.\nLee el id del lead y valida su formato."
+      }
+    },
+    {
+      "id": "u-n3",
+      "name": "Note - Is Confirmation",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        540,
+        640
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "❓ IS CONFIRMATION? / ¿ES CONFIRMACIÓN?\n\nOnly the POST with a valid id changes data.\nSolo el POST con un id válido cambia datos."
+      }
+    },
+    {
+      "id": "u-n4",
+      "name": "Note - Read Leads",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        840,
+        640
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "📇 READ LEADS / LEER LEADS\n\nReads the Leads sheet to find the row.\nLee la hoja Leads para encontrar la fila."
+      }
+    },
+    {
+      "id": "u-n5",
+      "name": "Note - Build Opt-Out",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1140,
+        640
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🧮 BUILD OPT-OUT / ARMAR BAJA\n\nFinds the row and prepares estado = opt_out.\nEncuentra la fila y prepara estado = opt_out."
+      }
+    },
+    {
+      "id": "u-n6",
+      "name": "Note - Lead Found",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        640
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "❓ LEAD FOUND? / ¿EXISTE?\n\nUnknown id → no write, same neutral page.\nId desconocido → no escribe, misma página neutra."
+      }
+    },
+    {
+      "id": "u-n7",
+      "name": "Note - Save Opt-Out",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1740,
+        640
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "💾 SAVE OPT-OUT / GUARDAR BAJA\n\nWrites estado and ultima_actualizacion; P32a stops from the next run.\nGuarda estado y fecha; P32a deja de enviar desde la siguiente corrida."
+      }
+    },
+    {
+      "id": "u-n8",
+      "name": "Note - Page",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2040,
+        640
+      ],
+      "parameters": {
+        "width": 560,
+        "height": 200,
+        "color": 7,
+        "content": "📄 BUILD PAGE + RESPOND / PÁGINA Y RESPUESTA\n\nBilingual branded page: button, done or invalid link (text/html).\nPágina bilingüe: botón, listo o link inválido (text/html)."
+      }
+    }
+  ],
+  "connections": {
+    "Unsubscribe Link": {
+      "main": [
+        [
+          {
+            "node": "Unsubscribe Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unsubscribe Confirm": {
+      "main": [
+        [
+          {
+            "node": "Unsubscribe Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unsubscribe Gate": {
+      "main": [
+        [
+          {
+            "node": "Is Confirmation?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Confirmation?": {
+      "main": [
+        [
+          {
+            "node": "Read Leads",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Leads": {
+      "main": [
+        [
+          {
+            "node": "Build Opt-Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Opt-Out": {
+      "main": [
+        [
+          {
+            "node": "Lead Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Found?": {
+      "main": [
+        [
+          {
+            "node": "Save Opt-Out",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Opt-Out": {
+      "main": [
+        [
+          {
+            "node": "Build Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Page": {
+      "main": [
+        [
+          {
+            "node": "Respond Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Phoenix",
+    "errorWorkflow": "YOUR_ERROR_WORKFLOW_ID"
+  }
+}

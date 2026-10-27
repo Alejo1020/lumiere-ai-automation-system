@@ -1,0 +1,388 @@
+{
+  "name": "P31e - Lumière Send WhatsApp",
+  "nodes": [
+    {
+      "id": "w-trigger",
+      "name": "When Called",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "w-prepare",
+      "name": "Prepare Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Channel block (WhatsApp today; swap here for SMS). Sends AND logs in Conversaciones.\n// Bloque de canal (hoy WhatsApp; para SMS se cambia aquí). Envía Y registra en Conversaciones.\n// Input: { lead_id, whatsapp, mensaje, origen ('P31'...), rol ('assistant'|'user'|'equipo'),\n//          off_topic (bool), solo_registrar (bool: inbound or message we must not send), wa_message_sid (inbound) }\nconst TWILIO_FROM = 'whatsapp:YOUR_TWILIO_WHATSAPP_NUMBER'; // Twilio WhatsApp Sandbox\nconst i = $('When Called').first().json;\nconst txt = v => (v == null ? '' : String(v)).trim();\nconst yes = v => v === true || v === 'true';\n\nconst whatsapp = txt(i.whatsapp).replace(/^whatsapp:/, '');\nconst mensaje = txt(i.mensaje).slice(0, 1500); // WhatsApp corta en 1.600\nconst errores = [];\nif (!/^\\+\\d{11,15}$/.test(whatsapp)) errores.push('whatsapp');\nif (!mensaje) errores.push('mensaje');\n\nconst solo_registrar = yes(i.solo_registrar);\n// Public n8n URL for Twilio's status callback ($env is blocked in Code nodes here)\n// URL pública de n8n para el status callback ($env está bloqueado en los Code nodes)\nconst base = String($execution.resumeUrl || '').split('webhook-waiting')[0];\n\nreturn [{ json: {\n  lead_id: txt(i.lead_id),\n  whatsapp,\n  to: 'whatsapp:' + whatsapp,\n  from: TWILIO_FROM,\n  mensaje,\n  origen: txt(i.origen) || 'P31',\n  rol: txt(i.rol) || (solo_registrar ? 'user' : 'assistant'),\n  off_topic: yes(i.off_topic),\n  solo_registrar,\n  wa_message_sid_in: txt(i.wa_message_sid),\n  status_callback: base ? base + 'webhook/lumiere-wa-status' : '',\n  errores,\n  enviar: !solo_registrar && errores.length === 0\n} }];"
+      }
+    },
+    {
+      "id": "w-if",
+      "name": "Should Send?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-enviar",
+              "leftValue": "={{ $json.enviar }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "w-send",
+      "name": "Send via Twilio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        300
+      ],
+      "onError": "continueRegularOutput",
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.twilio.com/2010-04-01/Accounts/YOUR_TWILIO_ACCOUNT_SID/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "From",
+              "value": "={{ $json.from }}"
+            },
+            {
+              "name": "To",
+              "value": "={{ $json.to }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $json.mensaje }}"
+            },
+            {
+              "name": "StatusCallback",
+              "value": "={{ $json.status_callback }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "YOUR_TWILIO_CREDENTIAL_ID",
+          "name": "Twilio"
+        }
+      }
+    },
+    {
+      "id": "w-build",
+      "name": "Build Log Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// One row for Conversaciones, whether it was sent, failed or only logged.\n// Una fila para Conversaciones: enviado, fallido o solo registrado.\nconst m = $('Prepare Message').first().json;\nconst sent = $('Send via Twilio').isExecuted;\nconst r = sent ? ($('Send via Twilio').first().json || {}) : {};\n\nlet sid = m.wa_message_sid_in;\nlet estado_entrega = m.rol === 'user' ? 'recibido' : 'solo_registro';\nlet error = '';\nif (!m.solo_registrar && m.errores.length) { estado_entrega = 'error'; error = 'invalid: ' + m.errores.join(','); }\nif (sent) {\n  if (r.sid) { sid = r.sid; estado_entrega = r.status || 'queued'; }\n  else { estado_entrega = 'error'; error = String((r.error && (r.error.message || r.error.description)) || r.message || 'twilio_error').slice(0, 200); }\n}\n\nconst fecha = $now.setZone('America/Phoenix').toFormat('yyyy-MM-dd HH:mm:ss');\nreturn [{ json: {\n  row: [fecha, m.lead_id, m.whatsapp, m.rol, m.origen, m.mensaje, sid, error ? 'error: ' + error : estado_entrega, m.off_topic],\n  ok: estado_entrega !== 'error',\n  enviado: sent && Boolean(r.sid),\n  wa_message_sid: sid,\n  estado_entrega,\n  error,\n  fecha\n} }];"
+      }
+    },
+    {
+      "id": "w-log",
+      "name": "Log to Conversaciones",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1500,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/YOUR_GOOGLE_SHEET_ID/values/Conversaciones!A1:I1:append",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "valueInputOption",
+              "value": "RAW"
+            },
+            {
+              "name": "insertDataOption",
+              "value": "INSERT_ROWS"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [ $json.row ] }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "w-result",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// What the caller gets back / Lo que recibe el flujo que llamó\nconst b = $('Build Log Row').first().json;\nreturn [{ json: { ok: b.ok, enviado: b.enviado, wa_message_sid: b.wa_message_sid, estado_entrega: b.estado_entrega, error: b.error, fecha: b.fecha } }];"
+      }
+    },
+    {
+      "id": "w-n1",
+      "name": "Note - Prepare Message",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "✉️ PREPARE MESSAGE / PREPARAR MENSAJE\n\nValidates E.164 and text and builds the Twilio status callback URL.\nValida el E.164 y el texto y arma la URL del status callback de Twilio."
+      }
+    },
+    {
+      "id": "w-n2",
+      "name": "Note - Should Send?",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        540,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🔀 SEND OR LOG ONLY? / ¿ENVIAR O SOLO REGISTRAR?\n\nInbound messages and invalid data are only logged, never sent.\nLos mensajes entrantes y los datos inválidos solo se registran."
+      }
+    },
+    {
+      "id": "w-n3",
+      "name": "Note - Send via Twilio",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        840,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "📲 SEND VIA TWILIO / ENVIAR POR TWILIO\n\nWhatsApp through the Twilio API; on error it continues so the failure is logged.\nWhatsApp por la API de Twilio; si falla, sigue para que el error quede registrado."
+      }
+    },
+    {
+      "id": "w-n4",
+      "name": "Note - Log to Conversaciones",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1440,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🗂️ LOG TO CONVERSACIONES / REGISTRAR EN CONVERSACIONES\n\nAtomic values:append, safe with simultaneous runs.\nvalues:append atómico, seguro con ejecuciones simultáneas."
+      }
+    },
+    {
+      "id": "w-main",
+      "name": "Sticky Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        0
+      ],
+      "parameters": {
+        "width": 880,
+        "height": 200,
+        "color": 5,
+        "content": "## LUM - Send WhatsApp (shared piece / pieza compartida)\n**EN:** The only place that talks to the messaging channel. Every Lumière flow sends through here, so switching WhatsApp to SMS means editing one workflow. Every message (in and out) is logged with the same format.\n\n**ES:** El único lugar que habla con el canal. Todos los flujos de Lumière envían por aquí: pasar de WhatsApp a SMS es editar un solo workflow. Cada mensaje (entrante y saliente) queda registrado con el mismo formato."
+      }
+    },
+    {
+      "id": "w-n0",
+      "name": "Note - When Called",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "📥 CALLED BY ANY FLOW / LO LLAMA CUALQUIER FLUJO\n\nReceives who, what text, origin and role of the message.\nRecibe a quién, qué texto, el origen y el rol del mensaje."
+      }
+    },
+    {
+      "id": "w-n5",
+      "name": "Note - Build Log Row",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1140,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🧾 BUILD LOG ROW / ARMAR FILA DEL REGISTRO\n\nOne Conversaciones row: sent, failed or logged only.\nUna fila de Conversaciones: enviado, fallido o solo registrado."
+      }
+    },
+    {
+      "id": "w-n7",
+      "name": "Note - Return Result",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1740,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "↩️ RETURN RESULT / DEVOLVER RESULTADO\n\nTells the caller if it was sent, its SID and delivery status.\nLe dice al flujo que llamó si se envió, su SID y estado."
+      }
+    }
+  ],
+  "connections": {
+    "When Called": {
+      "main": [
+        [
+          {
+            "node": "Prepare Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Message": {
+      "main": [
+        [
+          {
+            "node": "Should Send?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Send?": {
+      "main": [
+        [
+          {
+            "node": "Send via Twilio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Log Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send via Twilio": {
+      "main": [
+        [
+          {
+            "node": "Build Log Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Log Row": {
+      "main": [
+        [
+          {
+            "node": "Log to Conversaciones",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Conversaciones": {
+      "main": [
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Phoenix",
+    "errorWorkflow": "YOUR_ERROR_WORKFLOW_ID",
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}

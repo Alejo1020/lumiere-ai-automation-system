@@ -1,0 +1,151 @@
+{
+  "name": "P31d - Lumière Client Context",
+  "nodes": [
+    {
+      "id": "c-trigger",
+      "name": "When Called",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "c-read",
+      "name": "Read All Sheets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "parameters": {
+        "method": "GET",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/YOUR_GOOGLE_SHEET_ID/values:batchGet?ranges=Leads&ranges=Conversaciones&ranges=Citas&ranges=Escalamientos&ranges=Servicios&ranges=Negocio&ranges=Calificaciones",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {}
+      },
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "id": "c-build",
+      "name": "Build Client Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Builds the full picture of ONE client from every Lumière sheet (one read = one consistent snapshot).\n// Arma la foto completa de UNA clienta con todas las hojas de Lumière (una lectura = una foto consistente).\n// Input / entrada: { lead_id } o { whatsapp } (opcional: max_mensajes, default 30)\nconst input = $('When Called').first().json;\nconst ranges = $input.first().json.valueRanges || [];\nconst SHEETS = ['Leads', 'Conversaciones', 'Citas', 'Escalamientos', 'Servicios', 'Negocio', 'Calificaciones']; // mismo orden que la URL\n\n// Filas -> objetos con encabezado, + row_number (fila real en el Sheet, para hacer update después)\nconst toRows = (vr) => {\n  const v = (vr && vr.values) || [];\n  const h = v[0] || [];\n  return v.slice(1)\n    .map((r, i) => { const o = { row_number: i + 2 }; h.forEach((k, j) => { o[k] = r[j] === undefined ? '' : String(r[j]); }); return o; })\n    .filter(o => h.some(k => o[k] !== ''));\n};\nconst t = {};\nSHEETS.forEach((s, i) => { t[s] = toRows(ranges[i]); });\n\n// Negocio (clave/valor) -> objeto; Servicios activos con números reales\nconst negocio = {};\nt.Negocio.forEach(r => { if (r.clave) negocio[r.clave] = r.valor; });\nconst servicios = t.Servicios\n  .filter(s => String(s.activo).toLowerCase() === 'si')\n  .map(s => ({ ...s, precio_desde_usd: Number(s.precio_desde_usd) || 0, duracion_min: Number(s.duracion_min) || 60 }));\n\nconst tz = negocio.zona_horaria || 'America/Phoenix';\nconst ahora = $now.setZone(tz).toFormat('yyyy-MM-dd HH:mm:ss');\nconst ahoraMin = ahora.slice(0, 16); // 'yyyy-MM-dd HH:mm', mismo formato que Citas.inicio\n\n// Buscar a la clienta por lead_id o por WhatsApp (comparando solo dígitos: Sheets a veces quita el +)\nconst digits = v => String(v || '').replace(/\\D/g, '');\nconst wantId = String(input.lead_id || '').trim();\nconst wantWa = digits(input.whatsapp);\nconst lead = t.Leads.find(l => (wantId && l.lead_id === wantId) || (wantWa && digits(l.whatsapp) === wantWa)) || null;\n\nif (!lead) {\n  return [{ json: { found: false, query: { lead_id: wantId, whatsapp: String(input.whatsapp || '') }, negocio, servicios, ahora } }];\n}\n\nconst mine = rows => rows.filter(r => r.lead_id === lead.lead_id);\nconst ACTIVE = ['agendada', 'confirmada', 'reprogramada'];\nconst citas = mine(t.Citas).sort((a, b) => (a.inicio < b.inicio ? -1 : 1));\nconst cita_activa = citas.find(c => ACTIVE.includes(c.estado) && c.inicio >= ahoraMin) || null;\nconst escalamientos = mine(t.Escalamientos);\nconst escalamiento_abierto = escalamientos.find(e => e.estado === 'abierto') || null;\nconst todos = mine(t.Conversaciones).filter(m => m.rol !== 'alerta_equipo'); // las alertas al equipo no son parte del chat\nconst mensajes = todos.slice(-(Number(input.max_mensajes) || 30));\nconst ya_vino = citas.some(c => c.estado === 'asistio') || lead.primera_vez === 'no';\n// P34: latest attended visit (last 7 days) without a rating yet / última cita atendida (7 días) aún sin calificar\nconst calificaciones = mine(t.Calificaciones);\nconst calificadas = new Set(calificaciones.map(r => r.cita_id));\nconst hace7 = $now.setZone(tz).minus({ days: 7 }).toFormat('yyyy-MM-dd HH:mm');\nconst cita_por_calificar = [...citas].reverse().find(c => c.estado === 'asistio' && !calificadas.has(c.cita_id) && (c.fin || c.inicio) >= hace7) || null;\n\nreturn [{ json: {\n  found: true,\n  lead,                                   // fila de Leads (con row_number)\n  es_clienta_nueva: !ya_vino,             // nueva -> agenda la consulta gratis (SRV-00)\n  servicio_interes: servicios.find(s => s.nombre_es === lead.tratamiento) || null,\n  cita_activa,                            // próxima cita vigente o null\n  citas,                                  // todas sus citas\n  escalamiento_abierto,                   // si existe, el agente NO responde\n  cita_por_calificar,                     // P34: cita atendida sin nota (o null)\n  calificaciones,                         // P34: sus notas 1-5\n  escalamientos_total: escalamientos.length,\n  mensajes,                               // últimos N de Conversaciones\n  mensajes_total: todos.length,\n  negocio,\n  servicios,\n  ahora\n} }];"
+      }
+    },
+    {
+      "id": "c-n1",
+      "name": "Note - When Called",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        460
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "📥 CALLED BY ANY FLOW / LO LLAMA CUALQUIER FLUJO\n\nReceives lead_id or whatsapp from any Lumière workflow.\nRecibe lead_id o whatsapp desde cualquier workflow de Lumière."
+      }
+    },
+    {
+      "id": "c-n2",
+      "name": "Note - Read All Sheets",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        460
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "📚 READ ALL SHEETS / LEER TODAS LAS HOJAS\n\nOne batchGet call reads the 7 sheets (Calificaciones added by P34): one consistent snapshot.\nUna sola llamada batchGet lee las 7 hojas (Calificaciones la sumó P34): una foto consistente."
+      }
+    },
+    {
+      "id": "c-n3",
+      "name": "Note - Build Client Context",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        540,
+        460
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🧩 BUILD CLIENT CONTEXT / ARMAR FOTO DE LA CLIENTA\n\nJoins by lead_id: lead, active appointment, open escalation, appointment waiting for a rating (P34), messages, services, business.\nUne por lead_id: lead, cita activa, escalamiento abierto, cita por calificar (P34), mensajes, servicios y negocio."
+      }
+    },
+    {
+      "id": "c-main",
+      "name": "Sticky Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        40
+      ],
+      "parameters": {
+        "width": 900,
+        "height": 220,
+        "color": 5,
+        "content": "## LUM - Client Context (shared piece / pieza compartida)\n**EN:** Single source of truth for \"who is this client and what is going on with her\". Every agent (P31-P35) calls this instead of reading sheets on its own. Business data (hours, prices, rules) lives in the Negocio and Servicios sheets, never in code.\n\n**ES:** Fuente única de \"quién es esta clienta y qué está pasando con ella\". Todos los agentes (P31-P35) la usan en vez de leer las hojas por su cuenta. Los datos del spa (horario, precios, reglas) viven en las hojas Negocio y Servicios, nunca en el código."
+      }
+    }
+  ],
+  "connections": {
+    "When Called": {
+      "main": [
+        [
+          {
+            "node": "Read All Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read All Sheets": {
+      "main": [
+        [
+          {
+            "node": "Build Client Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Phoenix",
+    "errorWorkflow": "YOUR_ERROR_WORKFLOW_ID",
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}

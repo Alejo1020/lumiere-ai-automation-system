@@ -1,0 +1,202 @@
+{
+  "name": "P31f - Lumière Availability",
+  "nodes": [
+    {
+      "id": "a-trigger",
+      "name": "When Called",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "negocio",
+              "type": "object"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "a-range",
+      "name": "Build Range",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        260,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Window to check: from now to the last bookable day (Negocio.dias_max_agenda).\n// Ventana a revisar: desde ahora hasta el último día agendable.\nconst n = $('When Called').first().json.negocio || {};\nconst tz = n.zona_horaria || 'America/Phoenix';\nconst now = $now.setZone(tz);\nconst timeMin = now.toISO();\nconst timeMax = now.plus({ days: Number(n.dias_max_agenda) || 14 }).endOf('day').toISO();\nreturn [{ json: {\n  calendar_id: n.calendar_id,\n  body: { timeMin, timeMax, timeZone: tz, items: [{ id: n.calendar_id }] }\n} }];"
+      }
+    },
+    {
+      "id": "a-fb",
+      "name": "Get Busy Times",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "YOUR_GOOGLE_CALENDAR_CREDENTIAL_ID",
+          "name": "Google Calendar account"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/calendar/v3/freeBusy",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleCalendarOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.body) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "a-slots",
+      "name": "Compute Free Slots",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Free 1-hour blocks inside business hours, with the minimum notice. Rules come from the Negocio sheet.\n// Bloques libres de 1 hora dentro del horario, con la anticipación mínima. Las reglas salen de la hoja Negocio.\nconst n = $('When Called').first().json.negocio || {};\nconst calId = $('Build Range').first().json.calendar_id;\nconst tz = n.zona_horaria || 'America/Phoenix';\nconst BLOCK = Number(n.bloque_min) || 60;\nconst res = $input.first().json || {};\nconst cal = (res.calendars || {})[calId] || {};\nif (cal.errors) throw new Error('Calendar freeBusy: ' + JSON.stringify(cal.errors));\nconst busy = (cal.busy || []).map(b => ({ s: DateTime.fromISO(b.start).toMillis(), e: DateTime.fromISO(b.end).toMillis() }));\n\n// Hours per weekday (Luxon: 1 = Monday ... 7 = Sunday)\nconst parse = v => { const m = String(v || '').match(/(\\d{1,2}):(\\d{2})\\s*-\\s*(\\d{1,2}):(\\d{2})/); return m ? { o: +m[1] * 60 + +m[2], c: +m[3] * 60 + +m[4] } : null; };\nconst HOURS = { 1: parse(n.horario_lun_vie), 2: parse(n.horario_lun_vie), 3: parse(n.horario_lun_vie), 4: parse(n.horario_lun_vie), 5: parse(n.horario_lun_vie), 6: parse(n.horario_sab), 7: parse(n.horario_dom) };\n\nconst now = $now.setZone(tz);\nconst earliest = now.plus({ hours: Number(n.anticipacion_min_horas) || 2 }).toMillis();\nconst days = Number(n.dias_max_agenda) || 14;\nconst free = [];\nconst lines = [];\nfor (let d = 0; d <= days; d++) {\n  const day = now.plus({ days: d }).startOf('day');\n  const h = HOURS[day.weekday];\n  if (!h) continue;\n  const times = [];\n  for (let m = h.o; m + BLOCK <= h.c; m += BLOCK) {\n    const s = day.plus({ minutes: m });\n    const sm = s.toMillis(), em = sm + BLOCK * 60000;\n    if (sm < earliest) continue;\n    if (busy.some(b => b.s < em && b.e > sm)) continue;\n    free.push(s.toFormat('yyyy-MM-dd HH:mm'));\n    times.push(s.toFormat('HH:mm'));\n  }\n  if (times.length) lines.push(day.setLocale('en').toFormat('ccc yyyy-MM-dd') + ': ' + times.join(', '));\n}\n\nreturn [{ json: {\n  ok: true,\n  block_min: BLOCK,\n  free_blocks: free,                                  // ['2026-10-23 09:00', ...]\n  slots_text: lines.join('\\n') || 'No free slots in the next ' + days + ' days.',\n  generated_at: now.toFormat('yyyy-MM-dd HH:mm')\n} }];"
+      }
+    },
+    {
+      "id": "a-main",
+      "name": "Sticky Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        20
+      ],
+      "parameters": {
+        "width": 1000,
+        "height": 230,
+        "color": 5,
+        "content": "## P31 - Availability (shared piece / pieza compartida)\n**EN:** Reads the busy times of the \"Lumière - Citas\" Google Calendar and returns the free 1-hour blocks for the next days, inside business hours and with the minimum notice. Hours, block size, notice and window come from the Negocio sheet.\n\n**ES:** Lee los horarios ocupados del Google Calendar \"Lumière - Citas\" y devuelve los bloques libres de 1 hora de los próximos días, dentro del horario y con la anticipación mínima. Horario, bloque, anticipación y ventana salen de la hoja Negocio."
+      }
+    },
+    {
+      "id": "a-n0",
+      "name": "Note - When Called",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        460
+      ],
+      "parameters": {
+        "width": 250,
+        "height": 200,
+        "color": 7,
+        "content": "📥 CALLED WITH BUSINESS RULES / LLAMADO CON LAS REGLAS\n\nReceives the Negocio data: hours, block, notice, window and calendar.\nRecibe los datos de Negocio: horario, bloque, anticipación, ventana y calendario."
+      }
+    },
+    {
+      "id": "a-n1",
+      "name": "Note - Build Range",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        200,
+        460
+      ],
+      "parameters": {
+        "width": 250,
+        "height": 200,
+        "color": 7,
+        "content": "🗓️ BUILD RANGE / ARMAR VENTANA\n\nFrom now to the last bookable day, in Arizona time.\nDesde ahora hasta el último día agendable, en hora de Arizona."
+      }
+    },
+    {
+      "id": "a-n2",
+      "name": "Note - Get Busy Times",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        460,
+        460
+      ],
+      "parameters": {
+        "width": 250,
+        "height": 200,
+        "color": 7,
+        "content": "📅 GET BUSY TIMES / TRAER HORARIOS OCUPADOS\n\nGoogle Calendar freeBusy for the Lumière - Citas calendar.\nfreeBusy de Google Calendar del calendario Lumière - Citas."
+      }
+    },
+    {
+      "id": "a-n3",
+      "name": "Note - Compute Free Slots",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        720,
+        460
+      ],
+      "parameters": {
+        "width": 250,
+        "height": 200,
+        "color": 7,
+        "content": "🧮 COMPUTE FREE SLOTS / CALCULAR HORARIOS LIBRES\n\nFree 1-hour blocks inside business hours, ready for Claude.\nBloques libres de 1 hora dentro del horario, listos para Claude."
+      }
+    }
+  ],
+  "connections": {
+    "When Called": {
+      "main": [
+        [
+          {
+            "node": "Build Range",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Range": {
+      "main": [
+        [
+          {
+            "node": "Get Busy Times",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Busy Times": {
+      "main": [
+        [
+          {
+            "node": "Compute Free Slots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Phoenix",
+    "errorWorkflow": "YOUR_ERROR_WORKFLOW_ID",
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}

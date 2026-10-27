@@ -1,0 +1,207 @@
+{
+  "name": "P36d - Lumière Metrics",
+  "nodes": [
+    {
+      "id": "m-trig",
+      "name": "When Called",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "sheet",
+              "type": "string"
+            },
+            {
+              "name": "desde",
+              "type": "string"
+            },
+            {
+              "name": "hasta",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "m-params",
+      "name": "Set Params",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Inputs: sheet ('real' | 'demo'), desde, hasta (yyyy-MM-dd, inclusive). Default: last full Monday-Sunday week (Arizona).\n// Entradas: sheet ('real' | 'demo'), desde, hasta. Por defecto: la semana pasada completa, de lunes a domingo.\nconst SHEETS = {\n  real: 'YOUR_GOOGLE_SHEET_ID',   // Lumière Aesthetics (production data)\n  demo: 'YOUR_DEMO_GOOGLE_SHEET_ID'    // Lumière Aesthetics - Demo (datos de demostración)\n};\nconst i = $('When Called').first().json;\nconst ISO = /^\\d{4}-\\d{2}-\\d{2}$/;\nconst sheet = i.sheet === 'demo' ? 'demo' : 'real';\nlet desde = String(i.desde || ''), hasta = String(i.hasta || '');\nif (!ISO.test(desde) || !ISO.test(hasta) || desde > hasta) {\n  const lastMonday = $now.setZone('America/Phoenix').startOf('week').minus({ weeks: 1 });\n  desde = lastMonday.toFormat('yyyy-MM-dd');\n  hasta = lastMonday.plus({ days: 6 }).toFormat('yyyy-MM-dd');\n}\nconst ranges = ['Leads', 'Conversaciones', 'Citas', 'Seguimientos', 'Calificaciones', 'Escalamientos', 'Servicios', 'Negocio', 'ROI'];\nreturn [{ json: { sheet, desde, hasta, ranges,\n  url: `https://sheets.googleapis.com/v4/spreadsheets/${SHEETS[sheet]}/values:batchGet?` + ranges.map(r => 'ranges=' + encodeURIComponent(r)).join('&') } }];\n"
+      }
+    },
+    {
+      "id": "m-read",
+      "name": "Read All Sheets",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "options": {}
+      }
+    },
+    {
+      "id": "m-calc",
+      "name": "Compute Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// P36d — Lumière metrics for a date range + the previous range of the same length (for \"vs. last week / month\").\n// Métricas de Lumière para un rango de fechas + el rango anterior del mismo largo (para comparar).\n// Every number comes from the Sheet (source of truth). Assumptions (minutes, $/hour, no-show base rate) come from the ROI sheet,\n// so the owner can see and change how the savings are estimated. Nothing is invented here.\n// Todo número sale del Sheet. Los supuestos salen de la hoja ROI: la dueña ve y cambia cómo se estima el ahorro.\nconst p = $('Set Params').first().json;\nconst vr = $input.first().json.valueRanges || [];\nconst toObjs = r => { const v = (r && r.values) || []; const h = v[0] || []; return v.slice(1).map(row => Object.fromEntries(h.map((k, i) => [k, row[i] === undefined ? '' : row[i]]))); };\nconst [leads, convs, citas, segs, cals, escs, servicios, negRows, roiRows] = p.ranges.map((_, i) => toObjs(vr[i]));\nconst kv = rows => Object.fromEntries(rows.map(r => [r.clave, r.valor]));\nconst negocio = kv(negRows), roi = kv(roiRows);\nconst num = (v, d) => { const n = Number(String(v).replace(',', '.')); return String(v).trim() !== '' && isFinite(n) ? n : d; };\nconst A = {\n  valor_hora: num(roi.valor_hora_recepcion_usd, 22), min_lead: num(roi.min_responder_lead, 5), min_msg: num(roi.min_mensaje_atendido, 2),\n  min_cita: num(roi.min_agendar_cita, 8), min_rec: num(roi.min_recordatorio, 3), min_toque: num(roi.min_toque_seguimiento, 3),\n  no_show_base: num(roi.tasa_no_show_sin_sistema_pct, 20) / 100, ticket: num(roi.ticket_promedio_usd, 350),\n  consulta: num(roi.valor_consulta_usd, 175), retainer: num(roi.retainer_mensual_usd, 0), horas_mes_antes: num(roi.horas_mes_antes, 0)\n};\nconst tz = negocio.zona_horaria || 'America/Phoenix';\nconst DT = s => DateTime.fromFormat(String(s).slice(0, 19), String(s).length > 16 ? 'yyyy-MM-dd HH:mm:ss' : 'yyyy-MM-dd HH:mm', { zone: tz });\n\n// Value of a visit: price \"from\" for per-session services, ROI values for consultation and per-unit/monthly services\n// Valor de una visita: precio \"desde\" en servicios por sesión; los valores de ROI para la consulta y lo que se cobra por unidad o mes\nconst svcBy = Object.fromEntries(servicios.map(s => [s.nombre_es, s]));\nconst visitValue = name => {\n  const s = svcBy[name];\n  if (!s) return A.ticket;\n  if (s.servicio_id === 'SRV-00') return A.consulta;\n  const pr = num(s.precio_desde_usd, 0);\n  return ['sesión', 'tratamiento', 'jeringa'].includes(s.unidad_precio) && pr > 0 ? pr : A.ticket;\n};\n// Business hours by weekday (to count leads answered outside them) / horario por día (para contar leads atendidos fuera de horario)\nconst hrs = v => { const m = String(v || '').match(/(\\d{1,2}):(\\d{2})\\s*-\\s*(\\d{1,2}):(\\d{2})/); return m ? [+m[1] * 60 + +m[2], +m[3] * 60 + +m[4]] : null; };\nconst H = { 1: hrs(negocio.horario_lun_vie), 2: hrs(negocio.horario_lun_vie), 3: hrs(negocio.horario_lun_vie), 4: hrs(negocio.horario_lun_vie), 5: hrs(negocio.horario_lun_vie), 6: hrs(negocio.horario_sab), 7: hrs(negocio.horario_dom) };\nconst outsideHours = dt => { const h = H[dt.weekday]; const m = dt.hour * 60 + dt.minute; return !h || m < h[0] || m >= h[1]; };\n\nconst segsByLead = {}; for (const s of segs) (segsByLead[s.lead_id] = segsByLead[s.lead_id] || []).push(s);\nconst convsByLead = {}; for (const c of convs) (convsByLead[c.lead_id] = convsByLead[c.lead_id] || []).push(c);\nconst remindedCita = new Set(segs.filter(s => s.origen === 'P33' && s.cita_id && !String(s.resultado).startsWith('error')).map(s => s.cita_id));\nconst ok = s => !String(s.resultado || '').startsWith('error');\nconst round = (n, d = 0) => Math.round(n * 10 ** d) / 10 ** d;\n\nfunction compute(desde, hasta) {\n  const inR = f => { const d = String(f || '').slice(0, 10); return d >= desde && d <= hasta; };\n  const days = DateTime.fromISO(hasta).diff(DateTime.fromISO(desde), 'days').days + 1;\n  // Leads + first-response time (Sofía's first P31 message after the lead arrived, capped at 1 h)\n  const L = leads.filter(l => inR(l.fecha_creacion));\n  let fuera = 0; const resp = [];\n  for (const l of L) {\n    const t0 = DT(l.fecha_creacion);\n    if (outsideHours(t0)) fuera++;\n    const first = (convsByLead[l.lead_id] || []).find(c => c.rol === 'assistant' && c.origen === 'P31' && String(c.fecha) >= String(l.fecha_creacion));\n    if (first) { const s = DT(first.fecha).diff(t0, 'seconds').seconds; if (s >= 0 && s <= 3600) resp.push(s); }\n  }\n  const mensajes = convs.filter(c => c.rol === 'assistant' && c.origen === 'P31' && inR(c.fecha)).length;\n  // Bookings made by Sofía, and where they came from (nurturing P32 / retention P35 in the 30 days before)\n  // Citas agendadas por Sofía y de dónde salieron (seguimiento P32 / retención P35 en los 30 días anteriores)\n  const C = citas.filter(c => c.creada_por === 'P31' && inR(c.fecha_creacion));\n  let deNurturing = 0, deRetencion = 0, valorRecuperado = 0;\n  for (const c of C) {\n    const created = String(c.fecha_creacion), from = DT(created).minus({ days: 30 }).toFormat('yyyy-MM-dd HH:mm:ss');\n    const prev = (segsByLead[c.lead_id] || []).filter(s => String(s.fecha) < created && String(s.fecha) >= from && ok(s));\n    const src = prev.some(s => s.origen === 'P35') ? 'P35' : prev.some(s => s.origen === 'P32') ? 'P32' : '';\n    if (!src) continue;\n    if (src === 'P35') deRetencion++; else deNurturing++;\n    if (c.estado !== 'cancelada') valorRecuperado += visitValue(c.servicio);\n  }\n  // Visits in the range: attendance and no-shows avoided (reminded visits vs. the base no-show rate)\n  // Visitas del rango: asistencia y no-shows evitados (visitas con recordatorio vs. la tasa base sin sistema)\n  const V = citas.filter(c => inR(c.inicio) && ['asistio', 'no_asistio'].includes(c.estado));\n  const asistio = V.filter(c => c.estado === 'asistio').length, noAsistio = V.length - asistio;\n  const VR = V.filter(c => remindedCita.has(c.cita_id));\n  const noShowR = VR.filter(c => c.estado === 'no_asistio').length;\n  const evitados = Math.max(0, Math.round(VR.length * A.no_show_base - noShowR));\n  const avgVisit = VR.length ? VR.reduce((s, c) => s + visitValue(c.servicio), 0) / VR.length : A.ticket;\n  const valorNoShows = evitados * avgVisit;\n  // Touches sent by each flow / toques enviados por cada flujo\n  const T = { P32: 0, P33: 0, P34: 0, P35: 0 };\n  for (const s of segs) if (inR(s.fecha) && ok(s) && T[s.origen] !== undefined) T[s.origen]++;\n  // Ratings, reviews asked, low-rating alerts / calificaciones, reseñas pedidas, alertas\n  const K = cals.filter(c => inR(c.fecha));\n  const notas = K.map(c => num(c.nota, 0)).filter(n => n >= 1);\n  const E = escs.filter(e => inR(e.fecha));\n  // Hours the front desk did not spend / horas de recepción que nadie tuvo que gastar\n  const minutos = L.length * A.min_lead + Math.max(0, mensajes - L.length) * A.min_msg + C.length * A.min_cita\n    + T.P33 * A.min_rec + (T.P32 + T.P34 + T.P35) * A.min_toque;\n  const horas = minutos / 60;\n  const valorHoras = horas * A.valor_hora;\n  const total = valorHoras + valorNoShows + valorRecuperado;\n  const costo = desde.endsWith('-01') && days >= 28 && days <= 31 ? A.retainer : A.retainer * days / 30;   // full month = the retainer\n  const conCita = new Set(citas.filter(c => c.creada_por === 'P31').map(c => c.lead_id));\n  return {\n    desde, hasta, dias: days,\n    leads: L.length, leads_fuera_horario: fuera, respuesta_prom_seg: resp.length ? Math.round(resp.reduce((a, b) => a + b, 0) / resp.length) : null,\n    conversion_lead_cita_pct: L.length ? round(100 * L.filter(l => conCita.has(l.lead_id)).length / L.length) : 0,\n    mensajes_sofia: mensajes,\n    citas_agendadas: C.length, citas_de_nurturing: deNurturing, clientas_que_vuelven: deRetencion,\n    visitas: V.length, asistio, no_asistio: noAsistio, tasa_no_show_pct: V.length ? round(100 * noAsistio / V.length, 1) : 0,\n    visitas_con_recordatorio: VR.length, no_shows_evitados: evitados,\n    toques: T, recordatorios: T.P33,\n    calificaciones: K.length, nota_promedio: notas.length ? round(notas.reduce((a, b) => a + b, 0) / notas.length, 1) : null,\n    resenas_pedidas: K.filter(c => c.resultado === 'resena_pedida').length, alertas_nota_baja: K.filter(c => c.resultado === 'alerta_duena').length,\n    escalamientos: E.length,\n    horas_ahorradas: round(horas, 1),\n    valor_horas_usd: Math.round(valorHoras), valor_no_shows_usd: Math.round(valorNoShows), valor_recuperado_usd: Math.round(valorRecuperado),\n    total_usd: Math.round(total), costo_sistema_usd: Math.round(costo), roi_x: costo > 0 ? round(total / costo, 1) : null\n  };\n}\n\n// Previous range: the previous calendar month for a full month (Oct vs Sep), otherwise the same number of days before\n// Rango anterior: el mes calendario anterior si es un mes completo (oct vs sep); si no, los mismos días hacia atrás\nconst d0 = DateTime.fromISO(p.desde), d1 = DateTime.fromISO(p.hasta);\nconst fullMonth = d0.day === 1 && d1.hasSame(d0, 'month') && d1.day === d0.daysInMonth;\nconst prevHasta = fullMonth ? d0.minus({ months: 1 }).endOf('month') : d0.minus({ days: 1 });\nconst prevDesde = fullMonth ? d0.minus({ months: 1 }).startOf('month') : prevHasta.minus({ days: d1.diff(d0, 'days').days });\nreturn [{ json: {\n  sheet: p.sheet,\n  periodo: compute(p.desde, p.hasta),\n  anterior: compute(prevDesde.toFormat('yyyy-MM-dd'), prevHasta.toFormat('yyyy-MM-dd')),\n  casos_abiertos: escs.filter(e => e.estado === 'abierto').length,\n  supuestos: A,\n  negocio: { nombre: negocio.nombre || 'Lumière Aesthetics', whatsapp_duena: negocio.whatsapp_duena || negocio.whatsapp_equipo || '',\n    idioma_duena: negocio.idioma_duena || 'en', email_duena: negocio.email_duena || '', direccion: negocio.direccion || '', zona_horaria: tz, sitio_web: negocio.sitio_web || '', whatsapp_spa: negocio.whatsapp_spa || '' }\n} }];\n"
+      }
+    },
+    {
+      "id": "m-main",
+      "name": "Sticky Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        60
+      ],
+      "parameters": {
+        "width": 1220,
+        "height": 200,
+        "color": 5,
+        "content": "## P36d - Metrics / Métricas\n**EN:** Shared piece. One set of numbers for every owner report (weekly summary, monthly ROI, office): leads, response time, bookings without staff, no-shows avoided, reviews, clients who came back, hours and money saved. Every number comes from the Sheet; assumptions come from the ROI sheet the owner can edit.\n\n**ES:** Pieza compartida. Los mismos números para todo reporte a la dueña (resumen semanal, ROI mensual, oficina): leads, tiempo de respuesta, citas sin recepcionista, no-shows evitados, reseñas, clientas que vuelven, horas y plata ahorradas. Todo sale del Sheet; los supuestos, de la hoja ROI que la dueña puede editar."
+      }
+    },
+    {
+      "id": "m-n0",
+      "name": "Note - When Called",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "📥 CALLED BY THE REPORTS / LA LLAMAN LOS REPORTES\n\nInputs: sheet (real | demo), desde, hasta. Empty dates = last full week.\nEntradas: sheet (real | demo), desde, hasta. Sin fechas = la semana pasada."
+      }
+    },
+    {
+      "id": "m-n1",
+      "name": "Note - Set Params",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "⚙️ SET PARAMS / PARÁMETROS\n\nPicks the real or demo Sheet and the date range.\nElige el Sheet real o el demo y el rango de fechas."
+      }
+    },
+    {
+      "id": "m-n2",
+      "name": "Note - Read All Sheets",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        540,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "📚 READ ALL SHEETS / LEER LAS HOJAS\n\nOne values:batchGet with the 9 sheets: one consistent snapshot.\nUn solo values:batchGet con las 9 hojas: una foto consistente."
+      }
+    },
+    {
+      "id": "m-n3",
+      "name": "Note - Compute Metrics",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        840,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🧮 COMPUTE METRICS / CALCULAR MÉTRICAS\n\nThe range + the previous one of the same length, to compare.\nEl rango + el anterior del mismo largo, para comparar."
+      }
+    }
+  ],
+  "connections": {
+    "When Called": {
+      "main": [
+        [
+          {
+            "node": "Set Params",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Params": {
+      "main": [
+        [
+          {
+            "node": "Read All Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read All Sheets": {
+      "main": [
+        [
+          {
+            "node": "Compute Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Phoenix",
+    "errorWorkflow": "YOUR_ERROR_WORKFLOW_ID",
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}

@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lumière Aesthetics | Med Spa in Scottsdale, AZ</title>
+  <meta name="description" content="Botox, dermal fillers, HydraFacial, laser and more in Scottsdale, Arizona. Natural results from a board-certified medical team. Book your complimentary consultation.">
+  <meta name="theme-color" content="#FFFFFF">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Lumière Aesthetics — Scottsdale Med Spa">
+  <meta property="og:description" content="Natural results, refined confidence. Book your complimentary consultation.">
+  <!-- https://lumiere-aesthetics.pages.dev lo reemplaza build.sh con el dominio real (SITE_URL=...) -->
+  <link rel="canonical" href="https://lumiere-aesthetics.pages.dev/">
+  <meta property="og:url" content="https://lumiere-aesthetics.pages.dev/">
+  <meta property="og:site_name" content="Lumière Aesthetics">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:locale:alternate" content="es_US">
+  <meta property="og:image" content="https://lumiere-aesthetics.pages.dev/assets/og-image.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Lumière Aesthetics — Natural results. Refined confidence.">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <script>
+    document.documentElement.classList.add("js");
+    // La landing SIEMPRE arranca arriba: sin restaurar el scroll al recargar
+    // y sin saltar a un #ancla que haya quedado en la URL (ej. #contact).
+    if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+    if (location.hash) {
+      history.replaceState(null, "", location.pathname + location.search);
+      addEventListener("load", function () { scrollTo(0, 0); });
+    }
+  </script>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Caslon+Condensed:wght@400&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css?v=20261027073528">
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "MedicalBusiness",
+    "name": "Lumière Aesthetics",
+    "description": "Premium med spa in Scottsdale, Arizona.",
+    "telephone": "+1-480-555-0142",
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": "7150 E Via Soleri Dr, Suite 204",
+      "addressLocality": "Scottsdale",
+      "addressRegion": "AZ",
+      "postalCode": "85251",
+      "addressCountry": "US"
+    },
+    "openingHours": ["Mo-Fr 09:00-19:00", "Sa 09:00-16:00"]
+  }
+  </script>
+</head>
+<body>
+  <a class="skip-link" href="#main" data-i18n="skip">Skip to content</a>
+
+  <!-- ═════════════ Header ═════════════ -->
+  <header class="site-header" id="top">
+    <div class="container header-inner">
+      <a href="#top" class="logo" aria-label="Lumière Aesthetics">
+        <span class="logo-mark">Lumière</span>
+        <span class="logo-sub">Aesthetics</span>
+      </a>
+
+      <nav class="main-nav" aria-label="Main">
+        <a href="#services" data-i18n="nav.services">Treatments</a>
+        <a href="#expect" data-i18n="nav.expect">What to expect</a>
+        <a href="#reviews" data-i18n="nav.reviews">Reviews</a>
+        <a href="#faq" data-i18n="nav.faq">FAQ</a>
+      </nav>
+
+      <div class="header-actions">
+        <div class="lang-switch" role="group" aria-label="Language">
+          <button type="button" data-lang="en" aria-pressed="true">EN</button>
+          <span aria-hidden="true">/</span>
+          <button type="button" data-lang="es" aria-pressed="false">ES</button>
+        </div>
+        <a href="#contact" class="btn-outline" data-i18n="nav.cta">Book consult</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main">
+
+    <!-- ═════════════ 1. Hero (en móvil sin foto: va directo a la oferta y el CTA) ═════════════ -->
+    <section class="hero">
+      <div class="container hero-grid">
+        <div class="hero-copy reveal">
+          <p class="eyebrow" data-i18n="hero.eyebrow">Medical aesthetics · Scottsdale, AZ</p>
+          <h1>
+            <span data-i18n="hero.title1">Natural results.</span>
+            <em data-i18n="hero.title2">Refined confidence.</em>
+          </h1>
+          <p class="lead" data-i18n="hero.lead">Advanced, non-invasive treatments delivered by a board-certified medical team — designed to look like you, only rested.</p>
+          <div class="hero-offer">
+            <p><strong data-i18n="offer.title">Free consultation + skin analysis</strong> <span data-i18n="offer.body">and $50 credit toward your first treatment.</span></p>
+          </div>
+          <div class="hero-ctas">
+            <a href="#contact" class="btn btn-primary" data-i18n="hero.cta">Book your free consultation</a>
+          </div>
+          <p class="hero-rating"><span class="stars" aria-hidden="true">★★★★★</span> <strong>4.9</strong> <span data-i18n="hero.badge">from 380+ reviews</span></p>
+        </div>
+
+        <div class="hero-visual reveal" aria-hidden="true">
+          <div class="hero-media">
+            <img src="assets/media/hero-1080.webp" srcset="assets/media/hero-720.webp 720w, assets/media/hero-1080.webp 1080w" sizes="(min-width: 900px) 34vw, 100vw" width="1080" height="1350" alt="" fetchpriority="high">
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Trust bar -->
+    <section class="trust-bar" aria-label="Highlights">
+      <div class="container trust-grid">
+        <div class="trust-item"><strong>500+</strong><span data-i18n="trust.clients">clients in Scottsdale</span></div>
+        <div class="trust-item"><strong>4.9 ★</strong><span data-i18n="trust.rating">average rating</span></div>
+        <div class="trust-item"><strong>10</strong><span data-i18n="trust.years">years of experience</span></div>
+        <div class="trust-item"><strong>MD</strong><span data-i18n="trust.md">medical director on site</span></div>
+      </div>
+    </section>
+
+    <!-- ═════════════ 2. Formulario en 2 pasos (sube justo después del hero) ═════════════ -->
+    <section class="section section--mist" id="contact">
+      <div class="container contact-grid">
+        <div class="contact-copy reveal">
+          <p class="eyebrow" data-i18n="contact.eyebrow">Complimentary consultation</p>
+          <h2 data-i18n-html="contact.title">Your first visit <em>is on us</em></h2>
+          <p class="section-sub" data-i18n="contact.sub">Pick what you'd like to improve and leave your details. A Lumière specialist will reach out to schedule your free consultation.</p>
+          <ol class="steps desktop-only">
+            <li><span>1</span><p data-i18n="contact.step1">Share your goals in under a minute.</p></li>
+            <li><span>2</span><p data-i18n="contact.step2">A specialist contacts you to find the right time.</p></li>
+            <li><span>3</span><p data-i18n="contact.step3">Meet your specialist for a 30-minute, no-pressure consult.</p></li>
+          </ol>
+          <img class="contact-img desktop-only" src="assets/media/detalle-1200.webp" srcset="assets/media/detalle-700.webp 700w, assets/media/detalle-1200.webp 1200w" sizes="(min-width: 900px) 35vw, 100vw" width="1200" height="800" loading="lazy" data-i18n-alt="contact.alt" alt="Specialist performing a gentle facial treatment">
+        </div>
+
+        <div class="form-card reveal">
+          <form id="lead-form" novalidate>
+            <!-- Paso 1: un toque para elegir el tratamiento -->
+            <div class="form-step" data-step="1">
+              <p class="step-label" data-i18n="form.step1">Step 1 of 2</p>
+              <fieldset class="field" aria-describedby="err-servicio">
+                <legend class="step-title" data-i18n="form.q1">What would you like to improve?</legend>
+                <!-- value = nombre canónico que recibe n8n (no cambia con el idioma) -->
+                <div class="choice-grid">
+                  <label class="choice"><input type="radio" name="servicio" value="Botox / Dysport" data-name-key="s1.name" required><span class="choice-box"><span class="choice-name" data-i18n="s1.name">Botox / Dysport</span></span></label>
+                  <label class="choice"><input type="radio" name="servicio" value="Rellenos dérmicos" data-name-key="s2.name" required><span class="choice-box"><span class="choice-name" data-i18n="s2.name">Dermal Fillers</span></span></label>
+                  <label class="choice"><input type="radio" name="servicio" value="Microneedling con PRP" data-name-key="s3.name" required><span class="choice-box"><span class="choice-name" data-i18n="s3.name">Microneedling with PRP</span></span></label>
+                  <label class="choice"><input type="radio" name="servicio" value="Láser facial" data-name-key="s4.name" required><span class="choice-box"><span class="choice-name" data-i18n="s4.name">Laser Facial</span></span></label>
+                  <label class="choice"><input type="radio" name="servicio" value="HydraFacial" data-name-key="s5.name" required><span class="choice-box"><span class="choice-name" data-i18n="s5.name">HydraFacial</span></span></label>
+                  <label class="choice"><input type="radio" name="servicio" value="Depilación láser" data-name-key="s6.name" required><span class="choice-box"><span class="choice-name" data-i18n="s6.name">Laser Hair Removal</span></span></label>
+                  <label class="choice"><input type="radio" name="servicio" value="Membresías / paquetes mensuales" data-name-key="s7.name" required><span class="choice-box"><span class="choice-name" data-i18n="s7.name">Memberships & Monthly Plans</span></span></label>
+                  <label class="choice choice--unsure"><input type="radio" name="servicio" value="No estoy segura" data-name-key="form.unsure"><span class="choice-box"><span class="choice-name" data-i18n="form.unsure">Not sure yet — help me choose</span></span></label>
+                </div>
+                <p class="field-error" id="err-servicio" data-error-for="servicio" aria-live="polite"></p>
+              </fieldset>
+            </div>
+
+            <!-- Paso 2: datos mínimos para contactarla -->
+            <div class="form-step" data-step="2" hidden>
+              <div class="step-head">
+                <p class="step-label" data-i18n="form.step2">Step 2 of 2</p>
+                <button type="button" class="link-ghost step-back" id="step-back" data-i18n="form.back">Change treatment</button>
+              </div>
+              <p class="step-title" data-i18n="form.q2">Where should we send your free consultation?</p>
+              <p class="step-chosen"><span data-i18n="form.chosen">Treatment</span>: <strong id="chosen-name"></strong></p>
+
+              <div class="field">
+                <label for="f-nombre" data-i18n="form.name">Full name</label>
+                <input id="f-nombre" aria-describedby="err-nombre" name="nombre" type="text" autocomplete="name" required maxlength="120">
+                <p class="field-error" id="err-nombre" data-error-for="nombre" aria-live="polite"></p>
+              </div>
+              <div class="field">
+                <label for="f-telefono" data-i18n="form.phone">Mobile number (WhatsApp)</label>
+                <input id="f-telefono" aria-describedby="err-telefono" name="telefono" type="tel" autocomplete="tel" inputmode="tel" required maxlength="25" placeholder="(480) 000-0000">
+                <p class="field-error" id="err-telefono" data-error-for="telefono" aria-live="polite"></p>
+              </div>
+              <div class="field">
+                <label for="f-email"><span data-i18n="form.email">Email</span> <span class="optional" data-i18n="form.optional">(optional)</span></label>
+                <input id="f-email" aria-describedby="err-email" name="email" type="email" autocomplete="email" maxlength="160">
+                <p class="field-error" id="err-email" data-error-for="email" aria-live="polite"></p>
+              </div>
+              <fieldset class="field">
+                <legend><span data-i18n="form.first">Is this your first time at Lumière?</span> <span class="optional" data-i18n="form.optional">(optional)</span></legend>
+                <div class="radio-group">
+                  <label class="radio"><input type="radio" name="primera_vez" value="si"><span data-i18n="form.yes">Yes</span></label>
+                  <label class="radio"><input type="radio" name="primera_vez" value="no"><span data-i18n="form.no">No</span></label>
+                </div>
+              </fieldset>
+              <details class="field comment-toggle">
+                <summary data-i18n="form.commentToggle">Add a comment (optional)</summary>
+                <label for="f-comentario" class="visually-hidden" data-i18n="form.comment">Anything we should know?</label>
+                <textarea id="f-comentario" name="comentario" rows="3" maxlength="1000"></textarea>
+              </details>
+
+              <!-- Consentimiento WhatsApp (opt-in explícito; el mismo sistema funciona con SMS / TCPA): casilla sin marcar y obligatoria -->
+              <div class="field consent">
+                <label class="check">
+                  <input type="checkbox" name="consent" value="si" required aria-describedby="err-consent">
+                  <span class="check-box" aria-hidden="true"></span>
+                  <span class="check-text"><span data-i18n="form.consent">I agree to receive WhatsApp messages from Lumière Aesthetics about my consultation and appointments at the number provided. Message frequency varies. Data rates may apply. Reply STOP to opt out at any time.</span> <a href="privacy.html" target="_blank" rel="noopener" data-i18n="form.privacy">Privacy Policy</a></span>
+                </label>
+                <p class="field-error" id="err-consent" data-error-for="consent" aria-live="polite"></p>
+              </div>
+
+              <!-- Honeypot anti-spam: invisible para personas, los bots lo llenan -->
+              <div class="hp" aria-hidden="true">
+                <label for="f-website">Website</label>
+                <input id="f-website" name="website" type="text" tabindex="-1" autocomplete="off">
+              </div>
+
+              <button type="submit" class="btn btn-primary btn-block" id="submit-btn">
+                <span class="btn-label" data-i18n="form.submit">Get my free consultation</span>
+                <span class="spinner" aria-hidden="true"></span>
+              </button>
+              <p class="form-legal" data-i18n="form.legal">Your details are only used for your consultation. We never share or sell your mobile number.</p>
+            </div>
+          </form>
+
+          <!-- Estado: error -->
+          <div class="form-state form-state--error" id="state-error" hidden tabindex="-1">
+            <svg class="state-icon" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="22"/><path d="M24 14v13M24 33v1"/></svg>
+            <h3 data-i18n="error.title">We couldn't send your request</h3>
+            <p data-i18n="error.body">Something went wrong on our side. Try again, or call or text us directly.</p>
+            <div class="state-actions">
+              <button type="button" class="btn btn-primary" id="retry-btn" data-i18n="error.retry">Try again</button>
+              <a href="tel:+14805550142" class="link-ghost js-phone-tel"><span data-i18n="error.call">Call us</span>&nbsp;<span class="js-phone-display">(480) 555-0142</span></a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════════ 3. Servicios (carrusel en móvil, cuadrícula en escritorio) ═════════════ -->
+    <section class="section" id="services">
+      <div class="container">
+        <header class="section-head reveal">
+          <p class="eyebrow" data-i18n="services.eyebrow">Treatments</p>
+          <h2 data-i18n-html="services.title">Thoughtful treatments, <em>tailored to you</em></h2>
+          <p class="section-sub" data-i18n="services.sub">Every plan starts with a one-on-one assessment. No pressure, no upselling — just honest guidance.</p>
+        </header>
+
+        <div class="services-grid">
+          <article class="service-card reveal">
+            <img class="service-img" src="assets/media/s-botox-1000.webp" srcset="assets/media/s-botox-600.webp 600w, assets/media/s-botox-1000.webp 1000w" sizes="(min-width: 600px) 50vw, 80vw" width="1000" height="750" loading="lazy" data-i18n-alt="s1.alt" alt="Woman with natural, rested skin in golden light">
+            <span class="service-num">01</span>
+            <h3 data-i18n="s1.name">Botox / Dysport</h3>
+            <p class="service-price" data-i18n="s1.price">From $13 / unit</p>
+            <p class="service-desc" data-i18n="s1.desc">Softens expression lines on the forehead, frown and crow's feet — without freezing your face.</p>
+            <a href="#contact" class="link-ghost" data-pick="Botox / Dysport" data-i18n="services.book">Book this treatment</a>
+          </article>
+          <article class="service-card reveal">
+            <img class="service-img" src="assets/media/s-rellenos-1000.webp" srcset="assets/media/s-rellenos-600.webp 600w, assets/media/s-rellenos-1000.webp 1000w" sizes="(min-width: 600px) 50vw, 80vw" width="1000" height="750" loading="lazy" data-i18n-alt="s2.alt" alt="Close-up of natural-looking lips">
+            <span class="service-num">02</span>
+            <h3 data-i18n="s2.name">Dermal Fillers</h3>
+            <p class="service-price" data-i18n="s2.price">From $650 / syringe</p>
+            <p class="service-desc" data-i18n="s2.desc">Restores volume and balance to lips and cheeks with subtle, natural-looking contour.</p>
+            <a href="#contact" class="link-ghost" data-pick="Rellenos dérmicos" data-i18n="services.book">Book this treatment</a>
+          </article>
+          <article class="service-card reveal">
+            <img class="service-img" src="assets/media/s-microneedling-1000.webp" srcset="assets/media/s-microneedling-600.webp 600w, assets/media/s-microneedling-1000.webp 1000w" sizes="(min-width: 600px) 50vw, 80vw" width="1000" height="750" loading="lazy" data-i18n-alt="s3.alt" alt="Specialist performing a microneedling treatment">
+            <span class="service-num">03</span>
+            <h3 data-i18n="s3.name">Microneedling with PRP</h3>
+            <p class="service-price" data-i18n="s3.price">From $450 / session</p>
+            <p class="service-desc" data-i18n="s3.desc">Stimulates your own collagen to refine texture, pores and acne scarring.</p>
+            <a href="#contact" class="link-ghost" data-pick="Microneedling con PRP" data-i18n="services.book">Book this treatment</a>
+          </article>
+          <article class="service-card reveal">
+            <img class="service-img" src="assets/media/s-laser-1000.webp" srcset="assets/media/s-laser-600.webp 600w, assets/media/s-laser-1000.webp 1000w" sizes="(min-width: 600px) 50vw, 80vw" width="1000" height="750" loading="lazy" data-i18n-alt="s4.alt" alt="Laser facial treatment with protective eyewear">
+            <span class="service-num">04</span>
+            <h3 data-i18n="s4.name">Laser Facial</h3>
+            <p class="service-price" data-i18n="s4.price">From $300 / session</p>
+            <p class="service-desc" data-i18n="s4.desc">Rejuvenates and evens tone, fading sun spots and pigmentation from the Arizona sun.</p>
+            <a href="#contact" class="link-ghost" data-pick="Láser facial" data-i18n="services.book">Book this treatment</a>
+          </article>
+          <article class="service-card reveal">
+            <img class="service-img" src="assets/media/s-hydrafacial-1000.webp" srcset="assets/media/s-hydrafacial-600.webp 600w, assets/media/s-hydrafacial-1000.webp 1000w" sizes="(min-width: 600px) 50vw, 80vw" width="1000" height="750" loading="lazy" data-i18n-alt="s5.alt" alt="HydraFacial device on hydrated, glowing skin">
+            <span class="service-num">05</span>
+            <h3 data-i18n="s5.name">HydraFacial</h3>
+            <p class="service-price" data-i18n="s5.price">From $199</p>
+            <p class="service-desc" data-i18n="s5.desc">Deep cleanse, extraction and hydration in one session — instant glow, zero downtime.</p>
+            <a href="#contact" class="link-ghost" data-pick="HydraFacial" data-i18n="services.book">Book this treatment</a>
+          </article>
+          <article class="service-card reveal">
+            <img class="service-img" src="assets/media/s-depilacion-1000.webp" srcset="assets/media/s-depilacion-600.webp 600w, assets/media/s-depilacion-1000.webp 1000w" sizes="(min-width: 600px) 50vw, 80vw" width="1000" height="750" loading="lazy" data-i18n-alt="s6.alt" alt="Smooth legs after laser hair removal">
+            <span class="service-num">06</span>
+            <h3 data-i18n="s6.name">Laser Hair Removal</h3>
+            <p class="service-price" data-i18n="s6.price">From $99 / session</p>
+            <p class="service-desc" data-i18n="s6.desc">Long-lasting smooth skin with technology calibrated safely for every skin tone.</p>
+            <a href="#contact" class="link-ghost" data-pick="Depilación láser" data-i18n="services.book">Book this treatment</a>
+          </article>
+          <article class="service-card service-card--feature reveal">
+            <img class="service-img" src="assets/media/s-membresias-1000.webp" srcset="assets/media/s-membresias-600.webp 600w, assets/media/s-membresias-1000.webp 1000w" sizes="(min-width: 600px) 50vw, 80vw" width="1000" height="750" loading="lazy" data-i18n-alt="s7.alt" alt="Skincare ritual with creams and a gua sha on marble">
+            <span class="service-num">07</span>
+            <h3 data-i18n="s7.name">Memberships & Monthly Plans</h3>
+            <p class="service-price" data-i18n="s7.price">From $149 / month</p>
+            <p class="service-desc" data-i18n="s7.desc">Your monthly ritual: preferred pricing, priority booking and a plan built around your goals.</p>
+            <a href="#contact" class="link-ghost" data-pick="Membresías / paquetes mensuales" data-i18n="s7.cta">Ask about memberships</a>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- Franja de video a lo ancho (formato 16:9 original, sin recortes) -->
+    <section class="film desktop-only" aria-labelledby="film-title">
+      <div class="container">
+        <figure class="film-frame reveal">
+          <!-- El video carga al acercarse, solo en escritorio y sin "reducir movimiento" (ver main.js) -->
+          <video class="film-video" data-src="assets/media/film.mp4" poster="assets/media/film-poster-1280.webp" muted loop playsinline preload="none" aria-hidden="true"></video>
+          <figcaption class="film-caption">
+            <p class="eyebrow" data-i18n="film.eyebrow">Our philosophy</p>
+            <p id="film-title" class="film-title" data-i18n="film.title">Real skin. Natural light. Results that look like you.</p>
+          </figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!-- Banda editorial: el espacio -->
+    <section class="section editorial desktop-only" aria-labelledby="ed-title">
+      <div class="container editorial-grid">
+        <figure class="ed-main reveal">
+          <img src="assets/media/interior-1600.webp" srcset="assets/media/interior-800.webp 800w, assets/media/interior-1600.webp 1600w" sizes="(min-width: 900px) 60vw, 100vw" width="1600" height="1067" loading="lazy" data-i18n-alt="ed.alt1" alt="Travertine relaxation room with natural light">
+        </figure>
+        <div class="ed-side reveal">
+          <img src="assets/media/producto-1000.webp" srcset="assets/media/producto-600.webp 600w, assets/media/producto-1000.webp 1000w" sizes="(min-width: 900px) 30vw, 100vw" width="1000" height="1250" loading="lazy" data-i18n-alt="ed.alt2" alt="Skincare products on a cream stone arch">
+          <div class="ed-copy">
+            <p class="eyebrow" data-i18n="ed.eyebrow">The space</p>
+            <h2 id="ed-title" data-i18n-html="ed.title">A quiet sanctuary in <em>Old Town</em></h2>
+            <p data-i18n="ed.body">Natural light, warm stone and medical-grade care. Every room is designed so you can slow down while experts take care of the details.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════════ 3. Social proof ═════════════ -->
+    <section class="section section--mist" id="reviews">
+      <div class="container">
+        <header class="section-head reveal">
+          <p class="eyebrow" data-i18n="reviews.eyebrow">Client stories</p>
+          <h2 data-i18n-html="reviews.title">Trusted by <em>500+ women</em> in Scottsdale</h2>
+        </header>
+
+        <div class="reviews-grid">
+          <figure class="review reveal">
+            <span class="stars" aria-label="5 stars">★★★★★</span>
+            <blockquote data-i18n="r1.quote">“I was nervous about looking ‘done.’ Three months later my friends just say I look rested. That's exactly what I wanted.”</blockquote>
+            <figcaption><strong>Jessica M.</strong><span data-i18n="r1.meta">Paradise Valley · Botox</span></figcaption>
+          </figure>
+          <figure class="review reveal">
+            <span class="stars" aria-label="5 stars">★★★★★</span>
+            <blockquote data-i18n="r2.quote">“The consultation was honest — they actually talked me out of a treatment I didn't need. That's why I keep coming back.”</blockquote>
+            <figcaption><strong>Andrea L.</strong><span data-i18n="r2.meta">Old Town · Dermal fillers</span></figcaption>
+          </figure>
+          <figure class="review reveal">
+            <span class="stars" aria-label="5 stars">★★★★★</span>
+            <blockquote data-i18n="r3.quote">“Years of sun spots faded after my laser series. The team explained every step and the results speak for themselves.”</blockquote>
+            <figcaption><strong>Karen T.</strong><span data-i18n="r3.meta">North Scottsdale · Laser facial</span></figcaption>
+          </figure>
+          <figure class="review reveal">
+            <span class="stars" aria-label="5 stars">★★★★★</span>
+            <blockquote data-i18n="r4.quote">“My monthly HydraFacial is my non-negotiable. The membership pays for itself and booking by text is so easy.”</blockquote>
+            <figcaption><strong>Sofía R.</strong><span data-i18n="r4.meta">Tempe · Membership</span></figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════════ 4. Qué esperar (reemplaza antes/después hasta tener fotos reales) ═════════════ -->
+    <section class="section" id="expect">
+      <div class="container">
+        <header class="section-head reveal">
+          <p class="eyebrow" data-i18n="expect.eyebrow">What to expect</p>
+          <h2 data-i18n-html="expect.title">Simple, honest <em>and pressure-free</em></h2>
+        </header>
+        <ol class="expect-list">
+          <li class="reveal"><span class="expect-num">01</span><h3 data-i18n="e1.t">Free 30-minute consultation</h3><p data-i18n="e1.d">Meet your specialist, share your goals and get a skin analysis — no cost, no commitment.</p></li>
+          <li class="reveal"><span class="expect-num">02</span><h3 data-i18n="e2.t">A clear plan and price</h3><p data-i18n="e2.d">You leave with a personalized plan and an itemized quote. Your $50 credit applies to your first treatment.</p></li>
+          <li class="reveal"><span class="expect-num">03</span><h3 data-i18n="e3.t">Treatment on your terms</h3><p data-i18n="e3.d">Book when you're ready. Most treatments take under an hour, with little to no downtime.</p></li>
+        </ol>
+        <a href="#contact" class="btn btn-primary expect-cta" data-i18n="hero.cta">Book your free consultation</a>
+      </div>
+    </section>
+
+    <!-- ═════════════ 6. FAQ ═════════════ -->
+    <section class="section section--mist" id="faq">
+      <div class="container faq-wrap">
+        <header class="section-head reveal">
+          <p class="eyebrow" data-i18n="faq.eyebrow">FAQ</p>
+          <h2 data-i18n-html="faq.title">Good <em>questions</em></h2>
+        </header>
+
+        <div class="faq-list">
+          <details class="faq-item reveal">
+            <summary data-i18n="faq.q1">How much do treatments cost?</summary>
+            <p data-i18n="faq.a1">Pricing depends on your goals and the treatment plan. As a reference, Botox starts at $13 per unit and HydraFacials at $199. You'll get a transparent, itemized quote at your free consultation — and members save up to 20%.</p>
+          </details>
+          <details class="faq-item reveal">
+            <summary data-i18n="faq.q2">It's my first time. What should I expect?</summary>
+            <p data-i18n="faq.a2">Your first visit is a 30-minute conversation with a licensed specialist: we listen to your goals, assess your skin and recommend a plan. There's no obligation to book a treatment that day.</p>
+          </details>
+          <details class="faq-item reveal">
+            <summary data-i18n="faq.q3">Does it hurt? Is there downtime?</summary>
+            <p data-i18n="faq.a3">Most treatments feel like a quick pinch or warmth, and we use numbing cream when needed. HydraFacial and Botox have no downtime; fillers and microneedling may cause mild redness or swelling for 1–3 days.</p>
+          </details>
+          <details class="faq-item reveal">
+            <summary data-i18n="faq.q4">Where are you located?</summary>
+            <p data-i18n="faq.a4">We're in Old Town Scottsdale at 7150 E Via Soleri Dr, Suite 204, with free covered parking in the building.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+    <!-- Toque local: Scottsdale -->
+    <section class="place desktop-only" aria-labelledby="place-title">
+      <img src="assets/media/scottsdale-2400.webp" srcset="assets/media/scottsdale-1200.webp 1200w, assets/media/scottsdale-2400.webp 2400w" sizes="100vw" width="2400" height="1000" loading="lazy" data-i18n-alt="place.alt" alt="Saguaro cactus and mountains near Scottsdale, Arizona">
+      <div class="place-label">
+        <p class="eyebrow" data-i18n="place.eyebrow">Find us in</p>
+        <p id="place-title" class="place-title">Old Town Scottsdale, Arizona</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- ═════════════ 7. Footer ═════════════ -->
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div class="footer-brand">
+        <a href="#top" class="logo logo--light" aria-label="Lumière Aesthetics">
+          <span class="logo-mark">Lumière</span>
+          <span class="logo-sub">Aesthetics</span>
+        </a>
+        <p data-i18n="footer.tagline">Medical aesthetics with a natural touch.</p>
+      </div>
+
+      <div class="footer-col">
+        <h4 data-i18n="footer.visit">Visit us</h4>
+        <address>7150 E Via Soleri Dr, Suite 204<br>Scottsdale, AZ 85251</address>
+      </div>
+
+      <div class="footer-col">
+        <h4 data-i18n="footer.hours">Hours</h4>
+        <p><span data-i18n="footer.weekdays">Mon – Fri</span> · 9:00 – 19:00<br><span data-i18n="footer.sat">Saturday</span> · 9:00 – 16:00<br><span data-i18n="footer.sun">Sunday</span> · <span data-i18n="footer.closed">Closed</span></p>
+      </div>
+
+      <div class="footer-col">
+        <h4 data-i18n="footer.talk">Talk to us</h4>
+        <a href="tel:+14805550142" class="btn-outline btn-outline--light js-phone-tel"><span data-i18n="footer.call">Call</span>&nbsp;<span class="js-phone-display">(480) 555-0142</span></a>
+        <a href="https://wa.me/14805550142" class="footer-link js-phone-wa" target="_blank" rel="noopener" data-i18n="footer.text">Or message us on WhatsApp</a>
+        <a href="privacy.html" class="footer-link" data-i18n="form.privacy">Privacy Policy</a>
+      </div>
+    </div>
+    <div class="container footer-bottom">
+      <p>© <span id="year">2026</span> Lumière Aesthetics. <span data-i18n="footer.rights">All rights reserved.</span></p>
+      <p data-i18n="footer.medical">Treatments performed under the supervision of a licensed medical director.</p>
+      <p class="footer-concept" data-i18n="footer.concept">Concept project: Lumière Aesthetics is a fictional business created as a design and automation case study.</p>
+    </div>
+  </footer>
+
+  <!-- CTA fijo en móvil: aparece al pasar el hero, se oculta en el formulario -->
+  <div class="sticky-cta" id="sticky-cta" aria-hidden="true">
+    <a href="#contact" class="btn btn-primary" tabindex="-1" data-i18n="hero.cta">Book your free consultation</a>
+  </div>
+
+  <!-- CTA flotante (escritorio): "Agendar" siempre a la mano -->
+  <a href="#contact" class="cta-float" id="cta-float" data-i18n="nav.cta">Book consult</a>
+
+  <script src="js/config.js?v=20261027073528"></script>
+  <script src="js/i18n.js?v=20261027073528"></script>
+  <script src="js/main.js?v=20261027073528"></script>
+</body>
+</html>

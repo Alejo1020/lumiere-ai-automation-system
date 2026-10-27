@@ -1,0 +1,231 @@
+{
+  "name": "P36a - Lumière Office Event",
+  "nodes": [
+    {
+      "id": "e-trigger",
+      "name": "When Called",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "tipo",
+              "type": "string"
+            },
+            {
+              "name": "proyecto",
+              "type": "string"
+            },
+            {
+              "name": "lead_id",
+              "type": "string"
+            },
+            {
+              "name": "ref_id",
+              "type": "string"
+            },
+            {
+              "name": "detalle",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "e-build",
+      "name": "Build Event Row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// One row in Eventos per milestone. Same format for every Lumière flow (feeds the office and P36 reports).\n// Una fila en Eventos por hito. Mismo formato para todos los flujos de Lumière (alimenta la oficina y los reportes de P36).\n// Columns / Columnas: evento_id, fecha, tipo, proyecto, lead_id, ref_id, detalle\nconst TIPOS = ['lead_llega', 'cita_agendada', 'toque_enviado', 'recordatorio_confirmado', 'resena', 'clienta_vuelve', 'escalamiento', 'error'];\nconst PROYECTOS = ['P30', 'P31', 'P32', 'P33', 'P34', 'P35', 'P36'];\nconst rand = () => Math.random().toString(36).slice(2, 7).toUpperCase();\nconst fecha = $now.setZone('America/Phoenix').toFormat('yyyy-MM-dd HH:mm:ss');\nconst out = [];\nfor (const item of $input.all()) {\n  const e = item.json || {};\n  const tipo = String(e.tipo || '').trim();\n  const proyecto = String(e.proyecto || '').trim().toUpperCase();\n  if (!TIPOS.includes(tipo) || !PROYECTOS.includes(proyecto)) continue;   // unknown event -> ignored, never breaks the caller\n  const detalle = String(e.detalle || '').replace(/\\s+/g, ' ').trim().slice(0, 200);\n  out.push({ json: { row: ['EVT-' + fecha.slice(0, 10).replace(/-/g, '') + '-' + rand(), fecha, tipo, proyecto,\n    String(e.lead_id || ''), String(e.ref_id || ''), detalle] } });\n}\nreturn out;"
+      }
+    },
+    {
+      "id": "e-append",
+      "name": "Append to Eventos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        600,
+        300
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000,
+      "onError": "continueRegularOutput",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "parameters": {
+        "method": "POST",
+        "url": "https://sheets.googleapis.com/v4/spreadsheets/YOUR_GOOGLE_SHEET_ID/values/Eventos!A1:G1:append",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "valueInputOption",
+              "value": "RAW"
+            },
+            {
+              "name": "insertDataOption",
+              "value": "INSERT_ROWS"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ values: [ $json.row ] }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "e-return",
+      "name": "Return Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// What the caller gets back (callers do not wait for it: fire and forget).\n// Lo que recibe quien llama (no lo espera: dispara y sigue).\nconst rows = $('Build Event Row').all();\nreturn $input.all().map((item, i) => ({ json: {\n  ok: !item.json.error,\n  evento_id: rows[i] ? rows[i].json.row[0] : '',\n  tipo: rows[i] ? rows[i].json.row[2] : '',\n  error: item.json.error ? String(item.json.error.message || item.json.error) : ''\n} }));"
+      }
+    },
+    {
+      "id": "e-main",
+      "name": "Sticky Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        60
+      ],
+      "parameters": {
+        "width": 1160,
+        "height": 200,
+        "color": 5,
+        "content": "## P36a - Office Event / Evento para la oficina\n**EN:** Shared piece. Every Lumière flow sends its milestones here (lead arrives, booking, touch sent, reminder confirmed, review, client returns, escalation, error) in one format. Feeds the pixel-art office and the owner reports. Never breaks the caller.\n\n**ES:** Pieza compartida. Cada flujo de Lumière manda aquí sus hitos (lead llega, cita, toque, recordatorio confirmado, reseña, clienta que vuelve, escalamiento, error) con un solo formato. Alimenta la oficina pixel art y los reportes a la dueña. Nunca rompe al que la llama."
+      }
+    },
+    {
+      "id": "e-n0",
+      "name": "Note - When Called",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "📥 CALLED BY EVERY FLOW / LA LLAMAN TODOS LOS FLUJOS\n\nInputs: tipo, proyecto, lead_id, ref_id, detalle. Callers do not wait.\nEntradas: tipo, proyecto, lead_id, ref_id, detalle. Nadie espera la respuesta."
+      }
+    },
+    {
+      "id": "e-n1",
+      "name": "Note - Build Event Row",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        240,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🧱 BUILD EVENT ROW / ARMAR FILA DEL EVENTO\n\nOnly the 8 known milestones; EVT- id and Phoenix time.\nSolo los 8 hitos conocidos; id EVT- y hora de Phoenix."
+      }
+    },
+    {
+      "id": "e-n2",
+      "name": "Note - Append to Eventos",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        540,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "🗂️ APPEND TO EVENTOS / GUARDAR EN EVENTOS\n\nvalues:append RAW (safe with parallel runs); errors do not stop anything.\nvalues:append RAW (seguro con ejecuciones simultáneas); si falla no frena nada."
+      }
+    },
+    {
+      "id": "e-n3",
+      "name": "Note - Return Result",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        840,
+        480
+      ],
+      "parameters": {
+        "width": 260,
+        "height": 200,
+        "color": 7,
+        "content": "↩️ RETURN RESULT / DEVOLVER RESULTADO\n\n{ok, evento_id, tipo, error} for tests.\n{ok, evento_id, tipo, error} para las pruebas."
+      }
+    }
+  ],
+  "connections": {
+    "When Called": {
+      "main": [
+        [
+          {
+            "node": "Build Event Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Event Row": {
+      "main": [
+        [
+          {
+            "node": "Append to Eventos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append to Eventos": {
+      "main": [
+        [
+          {
+            "node": "Return Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Phoenix",
+    "callerPolicy": "workflowsFromSameOwner"
+  }
+}
