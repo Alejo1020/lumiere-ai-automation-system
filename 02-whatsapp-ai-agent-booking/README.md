@@ -4,6 +4,8 @@
 
 > Part of the **Lumière Aesthetics** portfolio (P30–P36): one fictional med spa in Old Town Scottsdale, Arizona, built as if it were a paying client.
 > P30 captures the lead on the landing page. **P31 answers her on WhatsApp within seconds, solves her questions with the spa's real data and books the appointment in Google Calendar, with no receptionist involved.** A person only steps in for 5 specific cases.
+>
+> 💬 **WhatsApp or SMS:** the demo runs on WhatsApp, but every message goes out through one shared sending block, so the same system works over SMS (Twilio) without changing the logic.
 
 ---
 

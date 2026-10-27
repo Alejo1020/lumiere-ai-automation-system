@@ -4,6 +4,8 @@
 
 > Parte del portafolio **Lumière Aesthetics** (P30–P36): un med spa ficticio en Old Town Scottsdale, Arizona, construido como si fuera un cliente que paga.
 > P30 captura el lead, P31 atiende y agenda por WhatsApp, P32 recupera a los leads que se quedaron callados. **P33 se asegura de que las clientas que agendaron sí lleguen**: recordatorios en cascada antes de cada cita, donde ella confirma, reprograma o cancela en un mensaje, y el espacio cancelado vuelve de inmediato al calendario.
+>
+> 💬 **WhatsApp o SMS:** la demo corre por WhatsApp, pero todos los mensajes salen por un solo bloque de envío compartido, así que el mismo sistema funciona por SMS (Twilio) sin cambiar la lógica.
 
 ---
 

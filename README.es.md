@@ -26,7 +26,7 @@ Un med spa paga por cada lead y después pierde plata en los mismos lugares:
 ## El recorrido de la clienta (lo que hace el sistema)
 
 1. **Llena el formulario** de la landing, a cualquier hora.
-2. **Le llega un WhatsApp en segundos.** Un agente de IA le resuelve las dudas con los precios y horarios reales del spa.
+2. **Le llega un WhatsApp (o SMS) en segundos.** Un agente de IA le resuelve las dudas con los precios y horarios reales del spa.
 3. **Agenda en el mismo chat.** El agente consulta Google Calendar y agenda, reprograma o cancela. Si se queda callada, una secuencia de seguimiento la trae de vuelta.
 4. **Recordatorios antes de la cita** (48 h, 24 h, 2 h): confirma, reprograma o cancela en un mensaje.
 5. **La atiende el equipo del spa.** El único paso 100 % humano.
@@ -70,7 +70,7 @@ Datos de demostración generados y procesados con las mismas hojas y los mismos 
 
 - **n8n (self-hosted)** corre todos los workflows. Los sub-workflows compartidos (contexto de la clienta, enviar WhatsApp, disponibilidad, agendar, enviar correo) los reutilizan todas las partes, así que nada se duplica.
 - **Claude API**: Sonnet para todo lo que habla con las clientas y para los agentes, con prompt caching en los system prompts largos. n8n calcula (horarios libres, métricas) y Claude decide; Claude nunca inventa disponibilidad ni números.
-- **Twilio WhatsApp** como canal. El bloque de envío está desacoplado, así que el mismo sistema funciona por SMS.
+- **Twilio WhatsApp** como canal en la demo. El bloque de envío está desacoplado, así que el mismo sistema funciona por SMS: el negocio elige el canal que ya usan sus clientas.
 - **Google Calendar** para la agenda del spa y **Google Sheets** como base de datos: una pestaña por entidad (Leads, Conversaciones, Citas, Seguimientos, Calificaciones, Escalamientos), unidas por `lead_id`. Lista para pasar a Postgres (cada pestaña = una tabla).
 - **Escalamiento a una persona en exactamente 5 casos**: pide hablar con alguien, tema médico, queja, pedido de dinero inusual o el agente no sabe qué hacer.
 - **Cloudflare Pages** para la landing y la oficina de IA.

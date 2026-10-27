@@ -4,6 +4,8 @@
 
 > Part of the **Lumière Aesthetics** portfolio (P30–P36): one fictional med spa in Old Town Scottsdale, Arizona, built as if it were a paying client.
 > P30 captures the lead, P31 answers and books on WhatsApp. **P32 brings back the leads who went quiet without booking**: a short, personalized sequence on WhatsApp (or a branded email if WhatsApp failed) that stops by itself the moment she replies, books, opts out or a message bounces.
+>
+> 💬 **WhatsApp or SMS:** the demo runs on WhatsApp, but every message goes out through one shared sending block, so the same system works over SMS (Twilio) without changing the logic.
 
 ---
 

@@ -2,7 +2,9 @@
 
 🇬🇧 English | [🇪🇸 Español](README.es.md)
 
-> Part 1 of the **Lumière Aesthetics** system: one fictional med spa in Old Town Scottsdale, Arizona, built as if it were a paying client. This part captures the lead; part 2 writes to her on WhatsApp within seconds.
+> Part 1 of the **Lumière Aesthetics** system: one fictional med spa in Old Town Scottsdale, Arizona, built as if it were a paying client. This part captures the lead; part 2 writes to her on WhatsApp (or SMS) within seconds.
+>
+> 💬 **WhatsApp or SMS:** the demo runs on WhatsApp, but every message goes out through one shared sending block, so the same system works over SMS (Twilio) without changing the logic.
 
 **Live:** https://lumiere-aesthetics.pages.dev
 

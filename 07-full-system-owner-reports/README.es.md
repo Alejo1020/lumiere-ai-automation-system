@@ -4,6 +4,8 @@
 
 > Insignia del portafolio **Lumière Aesthetics** (P30–P36): un med spa ficticio en Old Town Scottsdale, Arizona, construido como si fuera un cliente que paga.
 > P30 captura el lead, P31 atiende y agenda por WhatsApp, P32 recupera a los leads que se quedan callados, P33 se asegura de que las clientas lleguen, P34 pide la calificación y la reseña, P35 hace volver a las clientas. **P36 une los seis en un solo sistema y demuestra su valor en plata cada semana y cada mes**, y suma una "oficina de IA" en pixel art para mostrarlo funcionando en vivo en una llamada de ventas.
+>
+> 💬 **WhatsApp o SMS:** la demo corre por WhatsApp, pero todos los mensajes salen por un solo bloque de envío compartido, así que el mismo sistema funciona por SMS (Twilio) sin cambiar la lógica.
 
 **Demo en vivo:** https://lumiere-office.pages.dev (simulación de un mes de demostración) · `?mode=live` muestra los eventos del sistema real.
 

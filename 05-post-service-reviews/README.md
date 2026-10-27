@@ -4,6 +4,8 @@
 
 > Part of the **Lumière Aesthetics** portfolio (P30–P36): one fictional med spa in Old Town Scottsdale, Arizona, built as if it were a paying client.
 > P30 captures the lead, P31 answers and books on WhatsApp, P32 brings back quiet leads, P33 makes sure booked clients show up. **P34 handles what happens after the visit**: a thank-you and a 1–5 rating on WhatsApp. Happy clients get the Google review link; unhappy ones reach the owner in private before the problem becomes a public review. Clients who didn't show up get a friendly "we missed you, want to rebook?".
+>
+> 💬 **WhatsApp or SMS:** the demo runs on WhatsApp, but every message goes out through one shared sending block, so the same system works over SMS (Twilio) without changing the logic.
 
 ---
 

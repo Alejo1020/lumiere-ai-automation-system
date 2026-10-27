@@ -4,6 +4,8 @@
 
 > Flagship of the **Lumière Aesthetics** portfolio (P30–P36): one fictional med spa in Old Town Scottsdale, Arizona, built as if it were a paying client.
 > P30 captures the lead, P31 answers and books on WhatsApp, P32 brings back quiet leads, P33 makes sure booked clients show up, P34 asks for the rating and the review, P35 brings past clients back. **P36 turns the six into one system and proves its value in money every week and every month** — and adds a pixel-art "AI office" to show the whole thing working live in a sales call.
+>
+> 💬 **WhatsApp or SMS:** the demo runs on WhatsApp, but every message goes out through one shared sending block, so the same system works over SMS (Twilio) without changing the logic.
 
 **Live demo:** https://lumiere-office.pages.dev (simulation of a full demo month) · `?mode=live` shows the real system's events.
 

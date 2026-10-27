@@ -26,7 +26,7 @@ A med spa pays for every lead, then loses money in the same places:
 ## The client journey (what the system does)
 
 1. **She fills out the form** on the landing page, at any hour.
-2. **She gets a WhatsApp in seconds.** An AI agent answers her questions with the spa's real prices and hours.
+2. **She gets a WhatsApp (or SMS) in seconds.** An AI agent answers her questions with the spa's real prices and hours.
 3. **She books in the same chat.** The agent checks Google Calendar and books, reschedules or cancels. If she goes quiet, a follow-up sequence brings her back.
 4. **Reminders before the visit** (48h, 24h, 2h): confirm, reschedule or cancel in one reply.
 5. **The spa team treats her.** The only fully human step.
@@ -70,7 +70,7 @@ Generated demo data, run through the same sheets and the same reports the owner 
 
 - **n8n (self-hosted)** runs every workflow. Shared sub-workflows (client context, send WhatsApp, availability, booking, send email) are reused by all parts, so nothing is duplicated.
 - **Claude API**: Sonnet for everything that talks to clients and for the agents; prompt caching on long system prompts. n8n computes (free slots, metrics) and Claude decides; Claude never invents availability or numbers.
-- **Twilio WhatsApp** as the channel. The sending block is decoupled, so the same system works over SMS.
+- **Twilio WhatsApp** as the channel in the demo. The sending block is decoupled, so the same system works over SMS: the business picks the channel its clients already use.
 - **Google Calendar** for the spa's schedule and **Google Sheets** as the database: one tab per entity (Leads, Conversations, Appointments, Follow-ups, Ratings, Escalations), joined by `lead_id`. Ready to move to Postgres (each tab = a table).
 - **Escalation to a human in exactly 5 cases**: asks for a person, medical topic, complaint, unusual money request, or the agent is stuck.
 - **Cloudflare Pages** for the landing page and the AI office.
