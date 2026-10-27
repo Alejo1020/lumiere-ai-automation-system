@@ -99,4 +99,3 @@ Each part has a `README.md` (English) and `README.es.md` (Spanish) with the prob
 Built by **Alejandro Arroyave**, AI Automation Engineer. I build AI agents and automations with n8n, Claude, Twilio and Google Workspace for businesses that want the repetitive work off their team's plate.
 
 - Upwork: https://www.upwork.com/freelancers/~013fd3979d1da5ff68
-- More projects: [automation-portfolio](https://github.com/Alejo1020/automation-portfolio)

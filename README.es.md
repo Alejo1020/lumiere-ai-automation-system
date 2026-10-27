@@ -99,4 +99,3 @@ Cada parte tiene un `README.md` (inglés) y un `README.es.md` (español) con el 
 Construido por **Alejandro Arroyave**, AI Automation Engineer. Construyo agentes de IA y automatizaciones con n8n, Claude, Twilio y Google Workspace para empresas que quieren quitarle el trabajo repetitivo a su equipo.
 
 - Upwork: https://www.upwork.com/freelancers/~013fd3979d1da5ff68
-- Más proyectos: [automation-portfolio](https://github.com/Alejo1020/automation-portfolio)
