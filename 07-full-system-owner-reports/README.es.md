@@ -39,7 +39,7 @@ Dueña, cada lunes 8 a. m. (WhatsApp, 30 segundos)       Dueña, día 1 de cada 
                                                            → 6 tarjetas, mes contra mes, "cómo lo calculamos"
                                                            → P32c email (modo interno)
 
-Demo de ventas de Alejo: oficina de IA (Cloudflare Pages)
+Demo en vivo: oficina de IA (Cloudflare Pages)
   simulación: repite un mes de demostración en ~4 minutos, sin n8n, sin tokens, sin mensajes
   en vivo: consulta P36e Office Feed (webhook de solo lectura, solo nombres de pila, números en caché 5 min)
 ```
@@ -75,14 +75,13 @@ Probado en vivo de punta a punta con Twilio WhatsApp en el sistema real: una cli
 
 Costo de operación: la nota mensual es una llamada a Sonnet (< $0,01); todo lo demás son plantillas fijas y lecturas del Sheet.
 
-## Cómo se vende
+## Valor para el negocio
 
-**Pitch (a la dueña de un med spa):**
-> "Cada lunes te llega un WhatsApp con la semana pasada en números: leads atendidos, citas agendadas sin tu recepcionista, inasistencias evitadas en dólares. El día 1, un correo con el valor del mes contra lo que me pagas: este octubre fue 6 veces. Y el sistema solo te escribe cuando tienes que actuar: una queja, una pregunta médica o si algo falla. ¿Quieres verlo funcionando? Esta es tu oficina ahora mismo."
+> "Cada lunes te llega un WhatsApp con la semana pasada en números: leads atendidos, citas agendadas sin tu recepcionista, inasistencias evitadas en dólares. El día 1, un correo con el valor del mes contra lo que te cuesta el sistema: este octubre fue 6 veces. Y el sistema solo te escribe cuando tienes que actuar: una queja, una pregunta médica o si algo falla. ¿Quieres verlo funcionando? Esta es tu oficina ahora mismo."
 
-- **Cliente objetivo:** dueñas de med spas, clínicas estéticas y dentales que ya tienen (o van a comprar) las automatizaciones P30–P35.
-- **Precio (propuesta, por validar):** sistema Lumière completo **$3.000–4.500 de setup + $1.500–2.000/mes**. Los reportes son los que justifican el retainer cada mes. La oficina de IA no se vende: es la pieza de ventas de Alejo (video en su web + demo en vivo en llamadas).
-- **Upsell:** asistente de la dueña por WhatsApp ("¿cuántas citas tengo mañana?", "¿cómo vamos vs. el mes pasado?") sobre el mismo Sheet y Calendar.
+- **Para quién es:** dueñas de med spas, clínicas estéticas y dentales que tienen (o quieren) las automatizaciones de las partes 1–6.
+- Los reportes convierten la automatización en números que la dueña puede revisar cada mes: qué agendó, qué ahorró y cuánto devolvió.
+- **Se puede ampliar con:** un asistente de la dueña por WhatsApp ("¿cuántas citas tengo mañana?", "¿cómo vamos vs. el mes pasado?") sobre el mismo Sheet y Calendar.
 
 ## Stack técnico
 

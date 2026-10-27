@@ -67,15 +67,22 @@ Medido en pruebas reales de punta a punta (landing → WhatsApp → Google Calen
 
 Lo que ve la dueña: citas que aparecen en el calendario de su celular, agendadas mientras el spa estaba cerrado, y alertas solo cuando de verdad tiene que actuar.
 
-## Cómo se vende esto
+## Valor para el negocio
 
-**Pitch (a la dueña de un med spa):**
 > "Cada lead que llena tu formulario recibe un WhatsApp de tu clínica en 3 segundos, de día o de noche. Tu asistente responde precios y dudas con tu información real, agenda la consulta gratis directo en tu Google Calendar y solo molesta a tu equipo en los casos que necesitan una persona: salud, quejas o plata. Dejas de perder los leads que llegan fuera de horario, y tu recepcionista deja de pasarse el día cuadrando agenda."
 
-- **Cliente objetivo:** med spas, clínicas estéticas y dentales, salones: cualquier negocio con citas en EEUU que ya recibe leads por anuncios o por su web.
-- **Precio (propuesta, por validar con clientes reales):** setup **$2,000–4,000 USD** + retainer **$500–1,000 USD/mes** (une "respuesta rápida a leads" y "agendamiento inteligente" del menú de servicios). Se vende solo o como parte del sistema completo de Lumière (P36).
-- **Qué justifica el retainer:** el asistente sigue agendando todos los meses, se mantienen sus reglas y datos, y la dueña ve los resultados (P36 suma el resumen semanal y el informe mensual de ROI).
-- **Nota de producción:** la demo usa el Sandbox de WhatsApp de Twilio. Con un cliente real se necesita un número de WhatsApp Business, plantillas aprobadas por Meta para mensajes fuera de la ventana de 24 h, un dominio fijo en vez del Quick Tunnel y que un abogado revise el texto de consentimiento. El mismo sistema funciona por SMS cambiando un solo workflow (P31e).
+- **Para quién es:** med spas, clínicas estéticas y dentales, salones: cualquier negocio con citas que ya recibe leads por anuncios o por su web.
+- Funciona solo o dentro del sistema completo (parte 7), donde el resumen semanal y el informe mensual de ROI le muestran a la dueña lo que agendó el asistente.
+
+## Salir a producción
+
+La demo usa el Sandbox de WhatsApp de Twilio. Con un negocio real:
+
+- Un número de WhatsApp Business en vez del número del sandbox.
+- Plantillas aprobadas por Meta para mensajes fuera de la ventana de 24 h.
+- Un dominio fijo en vez de un Quick Tunnel.
+- Que un abogado revise el texto de consentimiento.
+- Para usar SMS en vez de WhatsApp solo cambia un workflow (P31e, el bloque de envío).
 
 ## Stack técnico
 

@@ -54,11 +54,12 @@ Probado en producción:
 | 5 leads en el mismo segundo | 5 filas, ninguna perdida |
 | Optimización para celular | La página pasó de 16,9 a 7,4 pantallas; el formulario pasó de la pantalla 13,6 a la 1,6 |
 
-## Cómo se vende esto
+## Valor para el negocio
 
-- **Pitch:** "Cada lead que llena tu formulario queda guardado en segundos, sin duplicados y con la prueba de consentimiento que necesitas para escribirle, y tu asistente le escribe de una."
-- **Cliente objetivo:** cualquier negocio con citas que recibe leads de anuncios o de su web.
-- Normalmente se vende junto con el agente de WhatsApp (parte 2), porque capturar solo no agenda a nadie.
+> "Cada lead que llena tu formulario queda guardado en segundos, sin duplicados y con la prueba de consentimiento que necesitas para escribirle, y tu asistente le escribe de una."
+
+- **Para quién es:** cualquier negocio con citas que recibe leads de anuncios o de su web.
+- Rinde más junto con el agente de WhatsApp (parte 2), porque capturar solo no agenda a nadie.
 
 ## Stack técnico
 

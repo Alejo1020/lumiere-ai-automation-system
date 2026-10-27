@@ -67,15 +67,22 @@ Measured in real end-to-end tests (landing → WhatsApp → Google Calendar):
 
 What the owner sees: appointments appearing in her phone's calendar, booked while the spa was closed, and alerts only when she actually needs to act.
 
-## How This Sells
+## Business Value
 
-**Pitch (to a med spa owner):**
 > "Every lead that fills your form gets a WhatsApp from your clinic in 3 seconds, day or night. Your assistant answers prices and questions with your real information, books the free consultation straight into your Google Calendar, and only bothers your team for the cases that need a human: health questions, complaints or money. You stop losing the leads that come in after hours, and your receptionist stops spending her day playing calendar ping-pong."
 
-- **Target client:** med spas, aesthetic and dental clinics, salons: any appointment-based business in the US that already gets leads from ads or a website.
-- **Pricing (proposal, to validate with real clients):** setup **$2,000–4,000** + retainer **$500–1,000/month** (combines "fast lead response" and "smart booking" from the service menu). Sold alone or as part of the full Lumière system (P36).
-- **What justifies the retainer:** the assistant keeps booking every month, its rules and data are maintained, and the owner sees the results (P36 adds the weekly summary and monthly ROI report).
-- **Production note:** the demo uses the Twilio WhatsApp Sandbox. With a real client: a WhatsApp Business sender, Meta-approved templates for messages outside the 24-hour window, a fixed domain instead of a quick tunnel, and the consent text reviewed by a lawyer. The same system works over SMS by changing one workflow (P31e).
+- **Who it's for:** med spas, aesthetic and dental clinics, salons: any appointment-based business that already gets leads from ads or a website.
+- Works alone or as part of the full system (part 7), where the weekly summary and the monthly ROI report show the owner what the assistant booked.
+
+## Going to Production
+
+The demo uses the Twilio WhatsApp Sandbox. With a real business:
+
+- A WhatsApp Business sender instead of the sandbox number.
+- Meta-approved templates for messages outside the 24-hour window.
+- A fixed domain instead of a quick tunnel.
+- The consent text reviewed by a lawyer.
+- For SMS instead of WhatsApp, only one workflow changes (P31e, the sending block).
 
 ## Tech Stack
 

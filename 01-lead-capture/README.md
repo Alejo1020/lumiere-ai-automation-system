@@ -54,11 +54,12 @@ Tested in production:
 | 5 leads in the same second | 5 rows, none lost |
 | Mobile conversion work | Page went from 16.9 to 7.4 screens long; the form moved from screen 13.6 to 1.6 |
 
-## How This Sells
+## Business Value
 
-- **Pitch:** "Every lead that fills your form is saved in seconds, with no duplicates and with the consent proof you need to message her, and your assistant writes to her right away."
-- **Target client:** any appointment-based business that gets leads from ads or a website.
-- Usually sold together with the WhatsApp agent (part 2), since capture alone doesn't book anyone.
+> "Every lead that fills your form is saved in seconds, with no duplicates and with the consent proof you need to message her, and your assistant writes to her right away."
+
+- **Who it's for:** any appointment-based business that gets leads from ads or a website.
+- Works best together with the WhatsApp agent (part 2), since capture alone doesn't book anyone.
 
 ## Tech Stack
 

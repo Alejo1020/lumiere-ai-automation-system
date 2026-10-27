@@ -39,7 +39,7 @@ Owner, every Monday 8 AM (WhatsApp, 30 seconds)          Owner, day 1 of each mo
                                                              → 6 KPI tiles, month over month, "how we calculate it"
                                                              → P32c email (internal mode)
 
-Alejo's sales demo: AI office (Cloudflare Pages)
+Live demo: AI office (Cloudflare Pages)
   simulation: replays a demo month in ~4 minutes, no n8n, no tokens, no messages
   live: polls P36e Office Feed (read-only webhook, first names only, numbers cached 5 min)
 ```
@@ -75,14 +75,13 @@ Tested live end to end with Twilio WhatsApp on the real system: a returning clie
 
 Running cost: the monthly note is one Sonnet call (< $0.01); everything else is fixed templates and Sheets reads.
 
-## How This Sells
+## Business Value
 
-**Pitch (to a med spa owner):**
-> "Every Monday you get one WhatsApp with last week in numbers: leads answered, appointments booked without your front desk, no-shows avoided in dollars. On the 1st, an email with the month's value against what you pay me — this October it was 6 times. And you only hear from the system when you need to act: a complaint, a medical question, or if something fails. Want to see it working? This is your office right now."
+> "Every Monday you get one WhatsApp with last week in numbers: leads answered, appointments booked without your front desk, no-shows avoided in dollars. On the 1st, an email with the month's value against what the system costs you — this October it was 6 times. And you only hear from the system when you need to act: a complaint, a medical question, or if something fails. Want to see it working? This is your office right now."
 
-- **Target client:** owners of med spas, aesthetic and dental clinics who already run (or will buy) the P30–P35 automations.
-- **Pricing (proposal, to validate):** full Lumière system **$3,000–4,500 setup + $1,500–2,000/month**. The reports are what justify the retainer every month. The AI office is not sold: it is Alejo's sales piece (website video + live demo in calls).
-- **Upsell:** an owner's assistant on WhatsApp ("how many appointments do I have tomorrow?", "how are we doing vs. last month?") built on the same Sheets and Calendar.
+- **Who it's for:** owners of med spas, aesthetic and dental clinics that run (or want) the automations of parts 1–6.
+- The reports turn the automation into numbers the owner can check every month: what it booked, what it saved and what it returned.
+- **Can be extended with:** an owner's assistant on WhatsApp ("how many appointments do I have tomorrow?", "how are we doing vs. last month?") built on the same Sheets and Calendar.
 
 ## Tech Stack
 

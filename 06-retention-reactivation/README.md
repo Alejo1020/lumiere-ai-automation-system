@@ -64,14 +64,17 @@ Tested live with Twilio WhatsApp (demo mode):
 
 Cost per message: **$0 in AI** for the outgoing templates; reading her reply is one short Claude call (< $0.02).
 
-## How This Sells
+## Business Value
 
-**Pitch (to a med spa owner):**
-> "How many of your Botox clients are past their 4 months right now — and how many of them will book with the spa down the street? This writes to each client on WhatsApp the week her touch-up is due, and to the ones who stopped coming with your welcome-back offer. If she says yes, the assistant books her right there. Ten clients back a month is about $4,500, without spending a dollar on ads — and you change the offer in a spreadsheet, not by calling me."
+> "How many of your Botox clients are past their 4 months right now — and how many of them will book with the spa down the street? This writes to each client on WhatsApp the week her touch-up is due, and to the ones who stopped coming with your welcome-back offer. If she says yes, the assistant books her right there. Ten clients back a month is about $4,500, without spending a dollar on ads — and you change the offer yourself in a spreadsheet."
 
-- **Target client:** med spas, aesthetic and dental clinics, salons, barbershops, physiotherapy — any business with repeat treatments.
-- **Pricing (proposal, to validate):** setup **$1,000–1,500** + retainer **$300–500/month**. Sold alone (with any booking history) or as part of the full Lumière system (P36), where "clients who came back" feeds the owner's monthly ROI report.
-- **Production note:** these are marketing messages outside WhatsApp's 24-hour window, so they need Meta-approved *marketing* templates and clear opt-out; they are already built as template + variables. The same system works over SMS by swapping the channel piece (P31e).
+- **Who it's for:** med spas, aesthetic and dental clinics, salons, barbershops, physiotherapy — any business with repeat treatments.
+- Works alone with any booking history, or as part of the full system (part 7), where "clients who came back" feeds the owner's monthly ROI report.
+
+## Going to Production
+
+- These are marketing messages outside WhatsApp's 24-hour window, so they need Meta-approved *marketing* templates and a clear opt-out; they are already built as template + variables.
+- For SMS instead of WhatsApp, only the sending block changes (P31e).
 
 ## Tech Stack
 

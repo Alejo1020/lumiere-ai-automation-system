@@ -64,14 +64,17 @@ Probado en vivo con Twilio WhatsApp (modo demo):
 
 Costo por mensaje: **$0 de IA** en las plantillas de salida; leer la respuesta es una llamada corta a Claude (< $0,02).
 
-## Cómo se vende
+## Valor para el negocio
 
-**Pitch (a la dueña de un med spa):**
-> "¿Cuántas de tus clientas de botox ya pasaron sus 4 meses, y cuántas van a agendar en el spa de la esquina? Esto le escribe por WhatsApp a cada clienta la semana en que le toca su retoque, y a las que dejaron de venir con tu oferta de bienvenida. Si dice que sí, la asistente la agenda ahí mismo. Diez clientas de vuelta al mes son unos $4.500, sin gastar un dólar en anuncios, y la oferta la cambias en una hoja de cálculo, sin llamarme."
+> "¿Cuántas de tus clientas de botox ya pasaron sus 4 meses, y cuántas van a agendar en el spa de la esquina? Esto le escribe por WhatsApp a cada clienta la semana en que le toca su retoque, y a las que dejaron de venir con tu oferta de bienvenida. Si dice que sí, la asistente la agenda ahí mismo. Diez clientas de vuelta al mes son unos $4.500, sin gastar un dólar en anuncios, y la oferta la cambias tú misma en una hoja de cálculo."
 
-- **Cliente objetivo:** med spas, clínicas estéticas y dentales, salones, barberías, fisioterapia: cualquier negocio con tratamientos que se repiten.
-- **Precio (propuesta, por validar):** setup **$1.000-1.500** + retainer **$300-500/mes**. Se vende solo (con cualquier historial de citas) o como parte del sistema completo de Lumière (P36), donde "clientas que volvieron" alimenta el informe mensual de ROI de la dueña.
-- **Nota de producción:** son mensajes de marketing fuera de la ventana de 24 h de WhatsApp, así que necesitan plantillas de *marketing* aprobadas por Meta y baja clara; ya están construidos como plantilla + variables. El mismo sistema funciona por SMS cambiando la pieza de canal (P31e).
+- **Para quién es:** med spas, clínicas estéticas y dentales, salones, barberías, fisioterapia: cualquier negocio con tratamientos que se repiten.
+- Funciona solo con cualquier historial de citas, o dentro del sistema completo (parte 7), donde "clientas que volvieron" alimenta el informe mensual de ROI de la dueña.
+
+## Salir a producción
+
+- Son mensajes de marketing fuera de la ventana de 24 h de WhatsApp, así que necesitan plantillas de *marketing* aprobadas por Meta y una baja clara; ya están construidos como plantilla + variables.
+- Para usar SMS en vez de WhatsApp solo cambia el bloque de envío (P31e).
 
 ## Stack técnico
 

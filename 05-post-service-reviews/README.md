@@ -66,14 +66,18 @@ Tested live with Twilio WhatsApp (demo mode):
 
 Cost per message: **$0 in AI** for the outgoing templates; reading her reply is one short Claude call (< $0.02).
 
-## How This Sells
+## Business Value
 
-**Pitch (to a med spa owner):**
 > "How many happy clients left last month without writing a review — and how many unhappy ones wrote one before you could fix it? After every visit this thanks the client on WhatsApp and asks for a quick 1 to 5. The happy ones get your Google review link right then, while they're glowing. If someone gives a 2, you get a WhatsApp alert instantly and talk to her in private before it becomes a public review. And anyone who missed her appointment gets a friendly 'want to rebook?'. Going from 2 to 11 reviews a month and recovering two no-shows pays for it many times over."
 
-- **Target client:** med spas, aesthetic and dental clinics, salons, any appointment-based business that lives on Google reviews.
-- **Pricing (proposal, to validate):** setup **$700–1,200** + retainer **$200–400/month**. Sold alone (any booking system that can mark "attended") or as part of the full Lumière system (P36), where reviews and saved complaints feed the owner's monthly ROI report.
-- **Production note:** post-visit messages go outside WhatsApp's 24-hour window, so they need Meta-approved templates; they are already built as template + variables. The same system works over SMS by swapping the channel piece (P31e). The review link is the clinic's Google Business Profile "write a review" link.
+- **Who it's for:** med spas, aesthetic and dental clinics, salons, any appointment-based business that lives on Google reviews.
+- Works alone with any booking system that can mark "attended", or as part of the full system (part 7), where reviews and saved complaints feed the owner's monthly ROI report.
+
+## Going to Production
+
+- Post-visit messages go outside WhatsApp's 24-hour window, so they need Meta-approved templates; they are already built as template + variables.
+- The review link is the clinic's Google Business Profile "write a review" link.
+- For SMS instead of WhatsApp, only the sending block changes (P31e).
 
 ## Tech Stack
 

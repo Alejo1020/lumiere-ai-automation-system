@@ -66,14 +66,18 @@ Probado en vivo con Twilio WhatsApp (modo demo):
 
 Costo por mensaje: **$0 de IA** en las plantillas; leer la respuesta es una llamada corta a Claude (< $0,02).
 
-## Cómo se vende
+## Valor para el negocio
 
-**Pitch (a la dueña de un med spa):**
 > "¿Cuántas clientas contentas se fueron el mes pasado sin dejar reseña, y cuántas molestas la dejaron antes de que pudieras arreglarlo? Después de cada cita, esto le agradece a la clienta por WhatsApp y le pide una nota rápida del 1 al 5. Las contentas reciben tu link de reseña en Google en ese momento, cuando están felices. Si alguien pone un 2, te llega una alerta por WhatsApp al instante y hablas con ella en privado antes de que se vuelva una reseña pública. Y a quien faltó a su cita le llega un amable '¿reagendamos?'. Pasar de 2 a 11 reseñas al mes y recuperar dos no-shows lo paga varias veces."
 
-- **Cliente objetivo:** med spas, clínicas estéticas y dentales, salones, cualquier negocio de citas que viva de sus reseñas en Google.
-- **Precio (propuesta, por validar):** setup **$700-1.200** + retainer **$200-400/mes**. Se vende solo (con cualquier agenda que pueda marcar "asistió") o como parte del sistema completo de Lumière (P36), donde las reseñas y las quejas atajadas alimentan el informe mensual de ROI de la dueña.
-- **Nota de producción:** los mensajes post-cita salen fuera de la ventana de 24 h de WhatsApp, así que necesitan plantillas aprobadas por Meta; ya están armadas como plantilla + variables. El mismo sistema funciona por SMS cambiando la pieza de canal (P31e). El link de reseña es el de "escribir una reseña" del Google Business Profile de la clínica.
+- **Para quién es:** med spas, clínicas estéticas y dentales, salones, cualquier negocio de citas que viva de sus reseñas en Google.
+- Funciona solo con cualquier agenda que pueda marcar "asistió", o dentro del sistema completo (parte 7), donde las reseñas y las quejas atajadas alimentan el informe mensual de ROI de la dueña.
+
+## Salir a producción
+
+- Los mensajes post-cita salen fuera de la ventana de 24 h de WhatsApp, así que necesitan plantillas aprobadas por Meta; ya están armadas como plantilla + variables.
+- El link de reseña es el de "escribir una reseña" del Google Business Profile de la clínica.
+- Para usar SMS en vez de WhatsApp solo cambia el bloque de envío (P31e).
 
 ## Stack técnico
 

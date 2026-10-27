@@ -66,14 +66,17 @@ Probado de punta a punta en condiciones reales (Twilio WhatsApp + Gmail + Google
 
 Costo: ~2.000 tokens de entrada por toque, casi todos en caché → **menos de $0,01 por toque**.
 
-## Cómo se vende
+## Valor para el negocio
 
-**Pitch (a la dueña de un med spa):**
 > "La mayoría de las personas que preguntan por un tratamiento no agendan ese día, y nadie de tu equipo tiene tiempo de perseguirlas. Este sistema lo hace por ti: unos pocos mensajes cortos y personales durante las dos semanas siguientes, usando lo que cada persona preguntó de verdad, y se detiene en el segundo en que responde o agenda. Si 10 de esos leads vuelven cada mes, son unos $4.500 que hoy estás dejando sobre la mesa."
 
-- **Cliente objetivo:** med spas, clínicas estéticas y dentales, cualquier negocio de citas que recibe leads que no convierte el primer día.
-- **Precio (propuesta, por validar):** setup **$1.000–2.200** + retainer **$350–700/mes** ("recuperación de clientes" en el menú de servicios). Se vende solo o dentro del sistema completo de Lumière (P36).
-- **Nota de producción:** los mensajes fuera de la ventana de 24 h de WhatsApp necesitan plantillas aprobadas por Meta. El workflow ya arma cada toque como plantilla + variables, así que salir a producción es registrar las plantillas y enviar `ContentSid` + `ContentVariables`. El mismo sistema funciona por SMS cambiando la pieza de canal (P31e).
+- **Para quién es:** med spas, clínicas estéticas y dentales, cualquier negocio de citas que recibe leads que no convierte el primer día.
+- Funciona solo o dentro del sistema completo (parte 7).
+
+## Salir a producción
+
+- Los mensajes fuera de la ventana de 24 h de WhatsApp necesitan plantillas aprobadas por Meta. El workflow ya arma cada toque como plantilla + variables, así que salir a producción es registrar las plantillas y enviar `ContentSid` + `ContentVariables`.
+- Para usar SMS en vez de WhatsApp solo cambia el bloque de envío (P31e).
 
 ## Stack técnico
 

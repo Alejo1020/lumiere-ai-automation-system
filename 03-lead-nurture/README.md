@@ -66,14 +66,17 @@ Tested end to end in real conditions (Twilio WhatsApp + Gmail + Google Calendar)
 
 Cost: ~2,000 input tokens per touch, most of it cached → **under $0.01 per touch**.
 
-## How This Sells
+## Business Value
 
-**Pitch (to a med spa owner):**
 > "Most of the people who ask about a treatment don't book that day, and nobody on your team has time to chase them. This system does it for you: a few short, personal messages over the following two weeks, using what each person actually asked, and it stops the second she replies or books. If 10 of those leads come back each month, that is about $4,500 you are leaving on the table today."
 
-- **Target client:** med spas, aesthetic and dental clinics, any appointment-based business that gets leads it does not convert on day one.
-- **Pricing (proposal, to validate):** setup **$1,000–2,200** + retainer **$350–700/month** ("client recovery" in the service menu). Sold alone or as part of the full Lumière system (P36).
-- **Production note:** messages outside WhatsApp's 24-hour window need Meta-approved templates. The workflow already builds each touch as template + variables, so going live means registering the templates and sending `ContentSid` + `ContentVariables`. The same system works over SMS by swapping the channel piece (P31e).
+- **Who it's for:** med spas, aesthetic and dental clinics, any appointment-based business that gets leads it does not convert on day one.
+- Works alone or as part of the full system (part 7).
+
+## Going to Production
+
+- Messages outside WhatsApp's 24-hour window need Meta-approved templates. The workflow already builds each touch as template + variables, so going live means registering the templates and sending `ContentSid` + `ContentVariables`.
+- For SMS instead of WhatsApp, only the sending block changes (P31e).
 
 ## Tech Stack
 

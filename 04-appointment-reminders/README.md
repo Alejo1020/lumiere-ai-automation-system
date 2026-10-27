@@ -60,14 +60,17 @@ Tested live with Twilio WhatsApp + Google Calendar (demo mode):
 
 Cost per reminder: **$0 in AI** (fixed templates) — only the WhatsApp/SMS message fee.
 
-## How This Sells
+## Business Value
 
-**Pitch (to a med spa owner):**
 > "How many chairs sat empty last month because someone forgot? This sends every client a short reminder before her appointment; she confirms, moves it or cancels with one message, and the freed slot goes back on your calendar right away. You see who confirmed in green on your phone. If it saves 8 appointments a month, that's about $3,600 — and your front desk stops calling people one by one."
 
-- **Target client:** med spas, aesthetic and dental clinics, salons, any business that lives on booked appointments.
-- **Pricing (proposal, to validate):** setup **$800–1,500** + retainer **$250–500/month**. Sold alone (works with any calendar booking) or as part of the full Lumière system (P36), where the no-shows it prevents show up in the owner's monthly ROI report.
-- **Production note:** reminders go outside WhatsApp's 24-hour window, so they need Meta-approved *utility* templates. They are already built as template + variables. The same system works over SMS by swapping the channel piece (P31e).
+- **Who it's for:** med spas, aesthetic and dental clinics, salons, any business that lives on booked appointments.
+- Works alone with any calendar booking, or as part of the full system (part 7), where the no-shows it prevents show up in the owner's monthly ROI report.
+
+## Going to Production
+
+- Reminders go outside WhatsApp's 24-hour window, so they need Meta-approved *utility* templates. They are already built as template + variables.
+- For SMS instead of WhatsApp, only the sending block changes (P31e).
 
 ## Tech Stack
 

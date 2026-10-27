@@ -60,14 +60,17 @@ Probado en vivo con Twilio WhatsApp + Google Calendar (modo demo):
 
 Costo por recordatorio: **$0 de IA** (plantillas fijas); solo la tarifa del mensaje de WhatsApp/SMS.
 
-## Cómo se vende
+## Valor para el negocio
 
-**Pitch (para la dueña de un med spa):**
 > "¿Cuántas sillas quedaron vacías el mes pasado porque alguien se olvidó? Esto le manda a cada clienta un recordatorio corto antes de su cita; ella confirma, la mueve o cancela con un mensaje, y el espacio libre vuelve a tu calendario al instante. Desde el celular ves en verde quién confirmó. Si salva 8 citas al mes, son unos $3.600, y tu recepción deja de llamar a la gente una por una."
 
-- **Cliente objetivo:** med spas, clínicas estéticas y odontológicas, salones, cualquier negocio que vive de citas.
-- **Precio (propuesta, por validar):** setup **$800-1.500** + retainer **$250-500 al mes**. Se vende solo (funciona con cualquier agenda en calendario) o dentro del sistema completo de Lumière (P36), donde los no-shows evitados aparecen en el informe mensual de ROI a la dueña.
-- **Nota de producción:** los recordatorios salen fuera de la ventana de 24 h de WhatsApp, así que necesitan plantillas *utility* aprobadas por Meta. Ya están armados como plantilla + variables. El mismo sistema funciona por SMS cambiando la pieza del canal (P31e).
+- **Para quién es:** med spas, clínicas estéticas y odontológicas, salones, cualquier negocio que vive de citas.
+- Funciona solo con cualquier agenda en calendario, o dentro del sistema completo (parte 7), donde los no-shows evitados aparecen en el informe mensual de ROI a la dueña.
+
+## Salir a producción
+
+- Los recordatorios salen fuera de la ventana de 24 h de WhatsApp, así que necesitan plantillas *utility* aprobadas por Meta. Ya están armados como plantilla + variables.
+- Para usar SMS en vez de WhatsApp solo cambia el bloque de envío (P31e).
 
 ## Stack técnico
 
